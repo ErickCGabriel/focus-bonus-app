@@ -818,7 +818,44 @@ function CollaboratorModal({ isOpen, onClose, initialData }) {
 }
 
 function AccessControlModal({ isOpen, onClose, initialData }) {
-    // ... Lógica interna do AccessControlModal
-    if (!isOpen) return null;
-    return <div className="fixed inset-0 bg-black bg-opacity-50 z-50"><Card>Modal de Controle de Acesso Completo</Card></div>;
+    const { handleSaveSystemUser } = useContext(AppContext);
+    const [formData, setFormData] = useState(null);
+
+    useEffect(() => {
+        setFormData(initialData ? { ...initialData } : { name: '', email: '', password: '', role: 'manager', team: 'Projetos' });
+    }, [initialData]);
+
+    const handleChange = (field, value) => setFormData(f => ({ ...f, [field]: value }));
+    const handleSave = () => {
+        handleSaveSystemUser(formData);
+        onClose();
+    };
+
+    if (!isOpen || !formData) return null;
+
+    const teams = ['Projetos', 'Laudos', 'Estudos', 'Automação', 'Campo'];
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <Card className="w-full max-w-md">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold">{initialData ? 'Editar' : 'Adicionar'} Usuário do Sistema</h2>
+                    <IconButton onClick={onClose}><X /></IconButton>
+                </div>
+                <div className="space-y-4">
+                    <div><label className="block text-sm font-medium">Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
+                    <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
+                    <div><label className="block text-sm font-medium">Senha</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" placeholder="Deixe em branco para não alterar"/></div>
+                    <div><label className="block text-sm font-medium">Função</label><select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md"><option value="manager">Gestor</option><option value="admin">Administrador</option></select></div>
+                    {formData.role === 'manager' && (
+                        <div><label className="block text-sm font-medium">Equipe</label><select value={formData.team} onChange={e => handleChange('team', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">{teams.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                    )}
+                </div>
+                <div className="flex justify-end gap-3 mt-8">
+                    <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+                    <Button variant="primary" onClick={handleSave}><Save size={16}/> Salvar</Button>
+                </div>
+            </Card>
+        </div>
+    );
 }
