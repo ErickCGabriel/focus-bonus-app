@@ -63,23 +63,24 @@ const AppProvider = ({ children }) => {
     const evaluationsCollectionPath = `evaluations`;
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
-                const userDocQuery = query(collection(db, usersCollectionPath), where("uid", "==", user.uid));
-                const unsubscribeProfile = onSnapshot(userDocQuery, (querySnapshot) => {
+                try {
+                    const userDocQuery = query(collection(db, usersCollectionPath), where("uid", "==", user.uid));
+                    const querySnapshot = await getDocs(userDocQuery);
                     if (!querySnapshot.empty) {
                         setUserProfile({id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data()});
+                        setCurrentUser(user);
                     } else {
-                        setUserProfile(null);
-                        console.error("User authenticated but no profile found in Firestore.");
+                        console.error("User authenticated but no profile found in Firestore for UID:", user.uid);
+                        await signOut(auth); // Desloga o utilizador se não houver perfil
                     }
-                    setCurrentUser(user);
-                    setIsLoading(false);
-                }, (error) => {
+                } catch (error) {
                     console.error("Error fetching user profile:", error);
+                    await signOut(auth);
+                } finally {
                     setIsLoading(false);
-                });
-                return () => unsubscribeProfile();
+                }
             } else {
                 setCurrentUser(null);
                 setUserProfile(null);
