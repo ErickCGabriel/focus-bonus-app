@@ -760,9 +760,61 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData }) {
 }
 
 function CollaboratorModal({ isOpen, onClose, initialData }) {
-    // ... Lógica interna do CollaboratorModal
-    if (!isOpen) return null;
-    return <div className="fixed inset-0 bg-black bg-opacity-50 z-50"><Card>Modal de Colaborador Completo</Card></div>;
+    const { handleSaveCollaborator } = useContext(AppContext);
+    const [formData, setFormData] = useState(null);
+    const [error, setError] = useState('');
+
+    useEffect(() => { 
+        setFormData(initialData ? { ...initialData } : { name: '', team: 'Projetos' }); 
+    }, [initialData]);
+    
+    const handleChange = (field, value) => {
+        setFormData(f => ({ ...f, [field]: value }));
+        setError('');
+    };
+
+    const handleSave = () => { 
+        if (!formData.name.trim()) {
+            setError('O nome é obrigatório.');
+            return;
+        }
+        handleSaveCollaborator(formData);
+        onClose();
+    };
+
+    if (!isOpen || !formData) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <Card className="w-full max-w-md">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold">{initialData ? 'Editar' : 'Adicionar'} Colaborador</h2>
+                    <IconButton onClick={onClose}><X /></IconButton>
+                </div>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Nome Completo</label>
+                        <input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : 'border-gray-300'}`} />
+                        {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Equipe / Lotação</label>
+                        <select value={formData.team} onChange={e => handleChange('team', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                            <option>Projetos</option>
+                            <option>Laudos</option>
+                            <option>Estudos</option>
+                            <option>Automação</option>
+                            <option>Campo</option>
+                        </select>
+                    </div>
+                </div>
+                <div className="flex justify-end gap-3 mt-8">
+                    <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+                    <Button variant="primary" onClick={handleSave}><Save size={16}/> Salvar Colaborador</Button>
+                </div>
+            </Card>
+        </div>
+    );
 }
 
 function AccessControlModal({ isOpen, onClose, initialData }) {
