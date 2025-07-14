@@ -422,7 +422,7 @@ function CalendarModule({ onLaunchEvalModal }) {
     const [currentDate, setCurrentDate] = useState(new Date());
 
     useEffect(() => {
-        if (!collaborators.find(c => c.id === selectedCollaboratorId)) {
+        if (collaborators.length > 0 && !collaborators.find(c => c.id === selectedCollaboratorId)) {
             setSelectedCollaboratorId(collaborators[0]?.id || null);
         }
     }, [collaborators, selectedCollaboratorId]);
@@ -586,7 +586,7 @@ function UserSelector({ collaborators, selectedCollaboratorId, setSelectedCollab
     return (
         <Card className="mb-6">
             <h3 className="font-bold text-lg mb-3 flex items-center gap-2"><Users className="w-5 h-5 text-gray-500" />Colaborador</h3>
-            <select value={selectedCollaboratorId} onChange={(e) => setSelectedCollaboratorId(Number(e.target.value))} className="w-full p-2 border rounded-md bg-white">
+            <select value={selectedCollaboratorId || ''} onChange={(e) => setSelectedCollaboratorId(e.target.value)} className="w-full p-2 border rounded-md bg-white">
                 {collaborators.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
             </select>
         </Card>
@@ -804,7 +804,7 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData }) {
                  <div className="space-y-4">
                      <div>
                          <label className="block text-sm font-medium text-gray-700">Colaborador</label>
-                         <select value={selectedCollaboratorId} onChange={e => setSelectedCollaboratorId(Number(e.target.value))} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData || currentUser.role === 'manager'}>
+                         <select value={selectedCollaboratorId || ''} onChange={e => setSelectedCollaboratorId(e.target.value)} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData || currentUser.role === 'manager'}>
                              {collaborators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                          </select>
                      </div>
