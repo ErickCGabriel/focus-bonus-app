@@ -754,9 +754,76 @@ function ExportModal({ isOpen, onClose }) {
 }
 
 function EvaluationModal({ isOpen, onClose, dateRange, initialData }) {
-    // ... Lógica interna do EvaluationModal
-    if (!isOpen) return null;
-    return <div className="fixed inset-0 bg-black bg-opacity-50 z-50"><Card>Modal de Avaliação Completo</Card></div>;
+    const { handleSaveEvaluation, collaborators, currentUser } = useContext(AppContext);
+    const [formData, setFormData] = useState(null);
+    const [error, setError] = useState('');
+    const [selectedCollaboratorId, setSelectedCollaboratorId] = useState(null);
+
+    useEffect(() => {
+        const defaultData = {
+            startDate: dateRange?.start?.toISOString().split('T')[0] || '',
+            endDate: dateRange?.end?.toISOString().split('T')[0] || '',
+            activityType: 'Escritório',
+            csName: '',
+            observation: '',
+            criteria: { prazo: 1, qualidade: 1, apontamento: 1 },
+        };
+        const dataToEdit = initialData ? { ...initialData } : defaultData;
+        setFormData(dataToEdit);
+        setSelectedCollaboratorId(dataToEdit.collaboratorId || collaborators[0]?.id);
+    }, [initialData, dateRange, collaborators]);
+
+    useEffect(() => {
+        if (formData) {
+            let newCriteria;
+            const currentCriteria = formData.criteria || {};
+            if (formData.activityType === 'Escritório') {
+                newCriteria = { prazo: currentCriteria.prazo ?? 1, qualidade: currentCriteria.qualidade ?? 1, apontamento: currentCriteria.apontamento ?? 1 };
+            } else {
+                newCriteria = { prazo: currentCriteria.prazo ?? 1, despesa: currentCriteria.despesa ?? 1, qualidade: currentCriteria.qualidade ?? 1, equipamento: currentCriteria.equipamento ?? 1 };
+            }
+            setFormData(f => ({ ...f, criteria: newCriteria }));
+        }
+    }, [formData?.activityType]);
+
+    const handleSave = () => {
+        if (!formData.csName.trim()) {
+            setError('O nome da CS é obrigatório.');
+            return;
+        }
+        handleSaveEvaluation({ ...formData, collaboratorId: selectedCollaboratorId });
+        onClose();
+    };
+
+    if (!isOpen || !formData) return null;
+
+    return (
+         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+             <Card className="w-full max-w-lg my-8">
+                 <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{initialData ? 'Editar' : 'Lançar'} Avaliação</h2><button onClick={onClose}><X className="text-gray-500" /></button></div>
+                 <div className="space-y-4">
+                     <div>
+                         <label className="block text-sm font-medium text-gray-700">Colaborador</label>
+                         <select value={selectedCollaboratorId} onChange={e => setSelectedCollaboratorId(Number(e.target.value))} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData || currentUser.role === 'manager'}>
+                             {collaborators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                         </select>
+                     </div>
+                     <p className="font-semibold bg-gray-100 p-2 rounded-md">Período: {new Date(formData.startDate+'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(formData.endDate+'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                     <div><label className="block text-sm font-medium text-gray-700">Tipo de Atividade</label><div className="mt-1 grid grid-cols-2 gap-2"><button onClick={() => setFormData(f => ({...f, activityType: 'Escritório'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Escritório' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Briefcase size={16}/> Escritório</button><button onClick={() => setFormData(f => ({...f, activityType: 'Campo'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Campo' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Mountain size={16}/> Campo</button></div></div>
+                     <div><label className="block text-sm font-medium text-gray-700">Nome da CS (Contrato)</label><input type="text" value={formData.csName} onChange={e => {setFormData(f => ({...f, csName: e.target.value})); setError('')}} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : 'border-gray-300'}`} />{error && <p className="text-red-500 text-xs mt-1">{error}</p>}</div>
+                     <div><label className="block text-sm font-medium text-gray-700">Critérios</label>
+                         <div className="mt-1 space-y-2 p-3 bg-gray-50 rounded-md">
+                             {Object.entries(formData.criteria).map(([key, value]) => (
+                                 <div key={key} className="flex justify-between items-center"><span className="capitalize font-medium text-gray-800">{key.replace('equipamento', 'equip./veículo')}</span><select value={value} onChange={e => setFormData(f => ({...f, criteria: {...f.criteria, [key]: Number(e.target.value)}}))} className="p-1 border rounded-md"><option value={1}>Sim</option><option value={0}>Não</option></select></div>
+                             ))}
+                         </div>
+                     </div>
+                     <div><label className="block text-sm font-medium text-gray-700">Observação (Opcional)</label><textarea value={formData.observation} onChange={e => setFormData(f => ({...f, observation: e.target.value}))} rows="2" className="mt-1 block w-full p-2 border rounded-md"></textarea></div>
+                     <div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancelar</Button><Button variant="primary" onClick={handleSave}><Save size={16}/> Salvar</Button></div>
+                 </div>
+             </Card>
+         </div>
+    );
 }
 
 function CollaboratorModal({ isOpen, onClose, initialData }) {
