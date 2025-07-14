@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // Importações do Firebase
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, deleteDoc, query, where } from "firebase/firestore";
+import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, deleteDoc, query, where, updateDoc } from "firebase/firestore";
 
 // --- Configuração do Firebase ---
 const firebaseConfig = {
@@ -115,11 +115,85 @@ const AppProvider = ({ children }) => {
         return [];
     }, [userProfile, collaborators]);
     
-    const handleSaveSystemUser = async (user) => { /* Lógica Firestore */ };
-    const handleSaveCollaborator = async (collaborator) => { /* Lógica Firestore */ };
-    const handleDeleteCollaborator = async (id) => { /* Lógica Firestore */ };
-    const handleSaveEvaluation = async (evaluation) => { /* Lógica Firestore */ };
-    const handleDeleteEvaluation = async (id) => { /* Lógica Firestore */ };
+    const handleSaveSystemUser = async (user) => {
+        try {
+            if (user.id) {
+                const userRef = doc(db, usersCollectionPath, user.id);
+                await updateDoc(userRef, { name: user.name, team: user.team, role: user.role });
+            } else {
+                const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
+                await setDoc(doc(db, usersCollectionPath, userCredential.user.uid), {
+                    uid: userCredential.user.uid,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                    team: user.role === 'manager' ? user.team : null,
+                });
+            }
+        } catch (error) {
+            console.error("Erro ao salvar utilizador do sistema:", error);
+            alert("Erro ao salvar usuário: " + error.message);
+        }
+    };
+    
+    const handleSaveCollaborator = async (collaborator) => {
+        try {
+            const { id, ...collabData } = collaborator;
+            if (id) {
+                await setDoc(doc(db, collaboratorsCollectionPath, id), collabData);
+            } else {
+                await addDoc(collection(db, collaboratorsCollectionPath), collabData);
+            }
+        } catch (error) {
+            console.error("Erro ao salvar colaborador:", error);
+        }
+    };
+    
+    const handleDeleteCollaborator = async (id) => {
+        setConfirmation({
+            isOpen: true,
+            title: 'Excluir Colaborador',
+            message: 'Tem certeza que deseja excluir este colaborador? Todas as suas avaliações também serão removidas.',
+            onConfirm: async () => {
+                try {
+                    await deleteDoc(doc(db, collaboratorsCollectionPath, id));
+                    // Opcional: deletar avaliações associadas
+                } catch (error) {
+                    console.error("Erro ao deletar colaborador:", error);
+                }
+                setConfirmation({ isOpen: false });
+            }
+        });
+    };
+
+    const handleSaveEvaluation = async (evaluation) => {
+        try {
+            const { id, ...evalData } = evaluation;
+            if (id) {
+                await setDoc(doc(db, evaluationsCollectionPath, id), evalData);
+            } else {
+                await addDoc(collection(db, evaluationsCollectionPath), evalData);
+            }
+        } catch (error) {
+            console.error("Erro ao salvar avaliação:", error);
+        }
+    };
+
+    const handleDeleteEvaluation = async (id) => {
+        setConfirmation({
+            isOpen: true,
+            title: 'Excluir Avaliação',
+            message: 'Tem certeza que deseja excluir esta avaliação?',
+            onConfirm: async () => {
+                try {
+                    await deleteDoc(doc(db, evaluationsCollectionPath, id));
+                } catch (error) {
+                    console.error("Erro ao deletar avaliação:", error);
+                }
+                setConfirmation({ isOpen: false });
+            }
+        });
+    };
 
     const value = {
         isAuthenticated: !!currentUser, 
