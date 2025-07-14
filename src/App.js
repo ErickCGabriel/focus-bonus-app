@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // Importações do Firebase
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, deleteDoc, query, where, getDocs } from "firebase/firestore";
+import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, deleteDoc, query, where } from "firebase/firestore";
 
 // --- Configuração do Firebase ---
 const firebaseConfig = {
@@ -51,7 +51,7 @@ const AppContext = createContext();
 const AppProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [userProfile, setUserProfile] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
     const [users, setUsers] = useState([]);
     const [collaborators, setCollaborators] = useState([]);
@@ -63,46 +63,39 @@ const AppProvider = ({ children }) => {
     const evaluationsCollectionPath = `evaluations`;
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                try {
-                    const userDocQuery = query(collection(db, usersCollectionPath), where("uid", "==", user.uid));
-                    const querySnapshot = await getDocs(userDocQuery);
-                    if (!querySnapshot.empty) {
-                        setUserProfile({id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data()});
-                        setCurrentUser(user);
-                    } else {
-                        console.error("User authenticated but no profile found in Firestore for UID:", user.uid);
-                        await signOut(auth);
-                    }
-                } catch (error) {
-                    console.error("Error fetching user profile:", error);
-                    await signOut(auth);
-                } finally {
-                    setIsLoading(false);
-                }
-            } else {
-                setCurrentUser(null);
-                setUserProfile(null);
-                setIsLoading(false);
-            }
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setCurrentUser(user);
+            setIsLoadingAuth(false);
         });
         return () => unsubscribe();
     }, []);
 
     useEffect(() => {
-        if (!userProfile) return;
-        
-        const unsubUsers = onSnapshot(query(collection(db, usersCollectionPath)), snapshot => setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-        const unsubCollabs = onSnapshot(query(collection(db, collaboratorsCollectionPath)), snapshot => setCollaborators(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-        const unsubEvals = onSnapshot(query(collection(db, evaluationsCollectionPath)), snapshot => setEvaluations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+        if (currentUser) {
+            const userDocQuery = query(collection(db, usersCollectionPath), where("uid", "==", currentUser.uid));
+            const unsubscribeProfile = onSnapshot(userDocQuery, (querySnapshot) => {
+                if (!querySnapshot.empty) {
+                    setUserProfile({id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data()});
+                } else {
+                    console.error("No profile found for logged-in user. Logging out.");
+                    signOut(auth);
+                }
+            });
+
+            const unsubUsers = onSnapshot(query(collection(db, usersCollectionPath)), snapshot => setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+            const unsubCollabs = onSnapshot(query(collection(db, collaboratorsCollectionPath)), snapshot => setCollaborators(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+            const unsubEvals = onSnapshot(query(collection(db, evaluationsCollectionPath)), snapshot => setEvaluations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
             
-        return () => {
-            unsubUsers();
-            unsubCollabs();
-            unsubEvals();
-        };
-    }, [userProfile]);
+            return () => {
+                unsubscribeProfile();
+                unsubUsers();
+                unsubCollabs();
+                unsubEvals();
+            };
+        } else {
+            setUserProfile(null);
+        }
+    }, [currentUser]);
 
     const handleLogin = async (email, password) => {
         try {
@@ -131,7 +124,7 @@ const AppProvider = ({ children }) => {
     const value = {
         isAuthenticated: !!currentUser, 
         currentUser: userProfile, 
-        isLoading,
+        isLoading: isLoadingAuth || (currentUser && !userProfile),
         users,
         collaborators: visibleCollaborators, 
         allCollaborators: collaborators, 
