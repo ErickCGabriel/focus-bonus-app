@@ -32,6 +32,11 @@ const getMonthsForQuarter = (q) => {
     if (q === 4) return [9, 10, 11];
     return [];
 };
+// Helper para parsear datas YYYY-MM-DD sem problemas de fuso horário
+const parseDate = (dateString) => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+};
 
 const Card = ({ children, className = '' }) => <div className={`bg-white rounded-lg shadow-md p-6 ${className}`}>{children}</div>;
 const Button = ({ children, onClick, className = '', variant = 'primary', type = 'button', disabled = false }) => {
@@ -367,7 +372,7 @@ function AppNavigator({ currentView, setCurrentView }) {
     );
 }
 
-// --- MÓDULOS DE PÁGINA (Com lógica completa) ---
+// --- MÓDULOS DE PÁGINA ---
 
 function DashboardModule({ onLaunchExportModal }) {
     const { collaborators, evaluations } = useContext(AppContext);
@@ -379,15 +384,21 @@ function DashboardModule({ onLaunchExportModal }) {
         const data = {};
         collaborators.filter(c => c.team !== 'Campo').forEach(c => {
             data[c.name] = {};
-            for (let month = 0; month < 12; month++) {
-                const monthEvals = evaluations.filter(e => e.collaboratorId === c.id && new Date(e.startDate).getFullYear() === year && new Date(e.startDate).getMonth() === month && e.activityType === 'Escritório');
+            for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
+                const monthEvals = evaluations.filter(e => {
+                    const [evalYear, evalMonth] = e.startDate.split('-').map(Number);
+                    return e.collaboratorId === c.id && 
+                           evalYear === year && 
+                           (evalMonth - 1) === monthIndex && 
+                           e.activityType === 'Escritório';
+                });
                 let possible = 0, obtained = 0;
                 monthEvals.forEach(e => {
-                    const duration = (new Date(e.endDate) - new Date(e.startDate)) / 86400000 + 1;
+                    const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
                     possible += duration * 3;
                     obtained += duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0);
                 });
-                data[c.name][month] = possible > 0 ? (obtained / possible) * 100 : null;
+                data[c.name][monthIndex] = possible > 0 ? (obtained / possible) * 100 : null;
             }
         });
         return data;
@@ -533,7 +544,12 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
 
     const getEvaluationsForDay = (day) => {
         const date = new Date(year, month, day);
-        return collaboratorEvaluations.filter(e => new Date(e.startDate + 'T00:00:00') <= date && new Date(e.endDate + 'T00:00:00') >= date);
+        date.setHours(12, 0, 0, 0); 
+        return collaboratorEvaluations.filter(e => {
+            const start = parseDate(e.startDate);
+            const end = parseDate(e.endDate);
+            return start <= date && end >= date;
+        });
     };
     
     const formatDate = (date) => date ? new Intl.DateTimeFormat('pt-BR').format(date) : '...';
@@ -599,27 +615,37 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
     const collaborator = collaborators.find(c => c.id === collaboratorId);
     const monthlyData = useMemo(() => {
         if (!collaboratorId) return { officePercentage: 0, officeBonus: 0, fieldBonus: 0, officePossiblePoints: 0, officeObtainedPoints: 0 };
-        const myEvals = evaluations.filter(e => e.collaboratorId === collaboratorId && new Date(e.startDate).getMonth() === currentDate.getMonth() && new Date(e.startDate).getFullYear() === currentDate.getFullYear());
-        const officeEvals = myEvals.filter(e => e.activityType === 'Escritório');
-        let officePossiblePoints = 0, officeObtainedPoints = 0;
-        officeEvals.forEach(e => {
-            const duration = (new Date(e.endDate) - new Date(e.startDate)) / 86400000 + 1;
-            officePossiblePoints += duration * 3;
-            officeObtainedPoints += duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0);
+        
+        const myEvals = evaluations.filter(e => {
+            const evalDate = parseDate(e.startDate);
+            return e.collaboratorId === collaboratorId && 
+                   evalDate.getFullYear() === currentDate.getFullYear() && 
+                   evalDate.getMonth() === currentDate.getMonth();
         });
-        const officePercentage = officePossiblePoints > 0 ? (officeObtainedPoints / officePossiblePoints) * 100 : 0;
-        const officeBonus = officePercentage > 80 ? 200 : 0;
+
+        let officePossiblePoints = 0, officeObtainedPoints = 0, fieldBonus = 0;
+
+        const officeEvals = myEvals.filter(e => e.activityType === 'Escritório');
+        officeEvals.forEach(e => {
+            const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
+            officePossiblePoints += duration * 3;
+            officeObtainedPoints += duration * Object.values(e.criteria).reduce((sum, val) => sum + (val || 0), 0);
+        });
+
         const fieldEvals = myEvals.filter(e => e.activityType === 'Campo');
-        let fieldBonus = 0;
         fieldEvals.forEach(e => {
             const allCriteriaMet = Object.values(e.criteria).every((v)=>v===1);
             if (allCriteriaMet) {
-                const duration = (new Date(e.endDate) - new Date(e.startDate)) / 86400000 + 1;
+                const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
                 fieldBonus += duration * 60;
             }
         });
+
+        const officePercentage = officePossiblePoints > 0 ? (officeObtainedPoints / officePossiblePoints) * 100 : 0;
+        const officeBonus = officePercentage > 80 ? 200 : 0;
+        
         return { officePercentage, officeBonus, fieldBonus, officePossiblePoints, officeObtainedPoints };
-    }, [collaboratorId, evaluations, currentDate, collaborators]);
+    }, [collaboratorId, evaluations, currentDate]);
 
     return (
         <Card>
