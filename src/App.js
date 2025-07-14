@@ -32,7 +32,6 @@ const getMonthsForQuarter = (q) => {
     if (q === 4) return [9, 10, 11];
     return [];
 };
-// Helper para parsear datas YYYY-MM-DD sem problemas de fuso horário
 const parseDate = (dateString) => {
     const [year, month, day] = dateString.split('-').map(Number);
     return new Date(year, month - 1, day);
@@ -162,7 +161,6 @@ const AppProvider = ({ children }) => {
             onConfirm: async () => {
                 try {
                     await deleteDoc(doc(db, collaboratorsCollectionPath, id));
-                    // Opcional: deletar avaliações associadas
                 } catch (error) {
                     console.error("Erro ao deletar colaborador:", error);
                 }
@@ -386,10 +384,10 @@ function DashboardModule({ onLaunchExportModal }) {
             data[c.name] = {};
             for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
                 const monthEvals = evaluations.filter(e => {
-                    const [evalYear, evalMonth] = e.startDate.split('-').map(Number);
+                    const evalDate = parseDate(e.startDate);
                     return e.collaboratorId === c.id && 
-                           evalYear === year && 
-                           (evalMonth - 1) === monthIndex && 
+                           evalDate.getFullYear() === year && 
+                           evalDate.getMonth() === monthIndex && 
                            e.activityType === 'Escritório';
                 });
                 let possible = 0, obtained = 0;
