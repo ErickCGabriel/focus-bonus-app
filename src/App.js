@@ -71,8 +71,12 @@ const AppProvider = ({ children }) => {
                         setUserProfile({id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data()});
                     } else {
                         setUserProfile(null);
+                        console.error("User authenticated but no profile found in Firestore.");
                     }
                     setCurrentUser(user);
+                    setIsLoading(false);
+                }, (error) => {
+                    console.error("Error fetching user profile:", error);
                     setIsLoading(false);
                 });
                 return () => unsubscribeProfile();
