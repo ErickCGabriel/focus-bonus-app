@@ -34,7 +34,6 @@ const getMonthsForQuarter = (q) => {
 };
 const parseDate = (dateString) => {
     const [year, month, day] = dateString.split('-').map(Number);
-    // Cria a data em UTC para evitar problemas de fuso horário
     return new Date(Date.UTC(year, month - 1, day));
 };
 
@@ -100,7 +99,7 @@ const AppProvider = ({ children }) => {
         } else {
             setUserProfile(null);
         }
-    }, [currentUser]);
+    }, [currentUser, usersCollectionPath, collaboratorsCollectionPath, evaluationsCollectionPath]);
 
     const handleLogin = async (email, password) => {
         try {
