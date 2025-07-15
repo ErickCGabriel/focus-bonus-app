@@ -402,7 +402,54 @@ function DashboardModule({ onLaunchExportModal }) {
         return data;
     }, [collaborators, evaluations, year]);
 
-    // ... Lógica do DashboardModule
+    const quarterlyWinners = useMemo(() => {
+        const teams = [...new Set(collaborators.filter(c => c.team !== 'Campo').map(c => c.team))];
+        const winners = {};
+        const months = getMonthsForQuarter(quarter);
+        
+        teams.forEach(team => {
+            const teamMembers = collaborators.filter(c => c.team === team);
+            let bestPerformer = null;
+            let maxScore = -1;
+
+            teamMembers.forEach(member => {
+                const memberData = performanceData[member.name];
+                if(!memberData) return;
+                const isEligible = months.every(m => memberData[m] === null || memberData[m] > 80);
+                
+                if (isEligible) {
+                    const quarterEvals = evaluations.filter(e => e.collaboratorId === member.id && parseDate(e.startDate).getFullYear() === year && months.includes(parseDate(e.startDate).getMonth()) && e.activityType === 'Escritório');
+                    const score = quarterEvals.reduce((acc, e) => {
+                        const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
+                        return acc + (duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0));
+                    }, 0);
+
+                    if (score > maxScore) {
+                        maxScore = score;
+                        bestPerformer = member.name;
+                    }
+                }
+            });
+            winners[team] = bestPerformer;
+        });
+        return winners;
+
+    }, [collaborators, evaluations, performanceData, quarter, year]);
+
+    const chartData = useMemo(() => {
+        const data = [];
+        for (let month = 0; month < 12; month++) {
+            const monthName = new Date(year, month).toLocaleString('pt-BR', { month: 'short' });
+            const entry = { name: monthName.replace('.','').toUpperCase() };
+            Object.keys(performanceData).forEach(name => {
+                const perf = performanceData[name][month];
+                if (perf !== null) entry[name] = perf;
+            });
+            data.push(entry);
+        }
+        return data;
+    }, [performanceData, year]);
+
     return (
         <div className="space-y-8">
             <Card>
@@ -420,9 +467,57 @@ function DashboardModule({ onLaunchExportModal }) {
                     </select>
                 </div>
             </Card>
-            {/* ... Gráficos e tabelas aqui */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <Card>
+                    <h3 className="font-bold text-lg mb-4">Performance Mensal (%)</h3>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-center">
+                            <thead className="bg-gray-100"><tr><th className="p-2 text-left">Mês</th>{Object.keys(performanceData).map(name => <th key={name} className="p-2">{name}</th>)}</tr></thead>
+                            <tbody>
+                                {Array.from({length: 12}).map((_, month) => (
+                                    <tr key={month} className="border-b"><td className="p-2 text-left font-semibold">{new Date(year, month).toLocaleString('pt-BR', {month: 'long'})}</td>
+                                    {Object.keys(performanceData).map(name => {
+                                        const perf = performanceData[name][month];
+                                        const bgColor = perf === null ? 'bg-gray-100' : perf > 80 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                                        return <td key={name} className={`p-2 font-semibold ${bgColor}`}>{perf !== null ? perf.toFixed(2)+'%' : '-'}</td>
+                                    })}</tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+                <div className="space-y-8">
+                    <Card>
+                        <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Trophy className="text-yellow-500"/> Ganhadores do Bônus Trimestral (Q{quarter})</h3>
+                        <div className="space-y-2">
+                            {Object.entries(quarterlyWinners).map(([team, name]) => (
+                                <div key={team} className="p-3 bg-yellow-50 rounded-md">
+                                    <p className="text-sm font-bold text-yellow-700">{team}</p>
+                                    <p className="text-lg font-semibold">{name || 'Nenhum ganhador'}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                    <Card>
+                        <h3 className="font-bold text-lg mb-4">Desempenho Mensal (Gráfico)</h3>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" />
+                                <YAxis unit="%" domain={[0, 120]}/>
+                                <Tooltip />
+                                <Legend />
+                                {Object.keys(performanceData).map((name, i) => {
+                                    const colors = ["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#0088FE", "#00C49F"];
+                                    return <Line key={name} type="monotone" dataKey={name} stroke={colors[i % colors.length]} />
+                                })}
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </Card>
+                </div>
+            </div>
         </div>
-    );
+    )
 }
 
 function CalendarModule({ onLaunchEvalModal }) {
