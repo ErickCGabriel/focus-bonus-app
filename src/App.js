@@ -34,7 +34,7 @@ const getMonthsForQuarter = (q) => {
 };
 const parseDate = (dateString) => {
     const [year, month, day] = dateString.split('-').map(Number);
-    return new Date(year, month - 1, day);
+    return new Date(Date.UTC(year, month - 1, day));
 };
 
 const Card = ({ children, className = '' }) => <div className={`bg-white rounded-lg shadow-md p-6 ${className}`}>{children}</div>;
@@ -99,7 +99,7 @@ const AppProvider = ({ children }) => {
         } else {
             setUserProfile(null);
         }
-    }, [currentUser]);
+    }, [currentUser, usersCollectionPath, collaboratorsCollectionPath, evaluationsCollectionPath]);
 
     const handleLogin = async (email, password) => {
         try {
