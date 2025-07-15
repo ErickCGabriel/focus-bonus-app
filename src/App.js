@@ -34,7 +34,8 @@ const getMonthsForQuarter = (q) => {
 };
 const parseDate = (dateString) => {
     const [year, month, day] = dateString.split('-').map(Number);
-    return new Date(year, month - 1, day);
+    // Cria a data em UTC para evitar problemas de fuso horário
+    return new Date(Date.UTC(year, month - 1, day));
 };
 
 const Card = ({ children, className = '' }) => <div className={`bg-white rounded-lg shadow-md p-6 ${className}`}>{children}</div>;
@@ -636,8 +637,7 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
     const handleNextMonth = () => setCurrentDate(new Date(year, month + 1, 15));
 
     const getEvaluationsForDay = (day) => {
-        const date = new Date(year, month, day);
-        date.setHours(12, 0, 0, 0); 
+        const date = new Date(Date.UTC(year, month, day));
         return collaboratorEvaluations.filter(e => {
             const start = parseDate(e.startDate);
             const end = parseDate(e.endDate);
