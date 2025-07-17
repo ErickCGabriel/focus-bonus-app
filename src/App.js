@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, createContext, useContext } from 'react';
-import { Users, BarChart3, Calendar, PlusCircle, X, Briefcase, Mountain, ChevronLeft, ChevronRight, Edit, Trash2, UserPlus, Save, AlertTriangle, FileSpreadsheet, Trophy, LogOut, KeyRound, ShieldCheck } from 'lucide-react';
+import { Users, BarChart3, Calendar, PlusCircle, X, Briefcase, Mountain, ChevronLeft, ChevronRight, Edit, Trash2, UserPlus, Save, AlertTriangle, FileSpreadsheet, Trophy, LogOut, KeyRound, ShieldCheck, Cog } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 // Importações do Firebase
@@ -60,11 +60,13 @@ const AppProvider = ({ children }) => {
     const [users, setUsers] = useState([]);
     const [collaborators, setCollaborators] = useState([]);
     const [evaluations, setEvaluations] = useState([]);
+    const [businessDays, setBusinessDays] = useState({});
     const [confirmation, setConfirmation] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     
     const usersCollectionPath = `users`;
     const collaboratorsCollectionPath = `collaborators`;
     const evaluationsCollectionPath = `evaluations`;
+    const businessDaysCollectionPath = `business_days`;
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -89,17 +91,25 @@ const AppProvider = ({ children }) => {
             const unsubUsers = onSnapshot(query(collection(db, usersCollectionPath)), snapshot => setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
             const unsubCollabs = onSnapshot(query(collection(db, collaboratorsCollectionPath)), snapshot => setCollaborators(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
             const unsubEvals = onSnapshot(query(collection(db, evaluationsCollectionPath)), snapshot => setEvaluations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+            const unsubBusinessDays = onSnapshot(query(collection(db, businessDaysCollectionPath)), snapshot => {
+                const daysData = {};
+                snapshot.forEach(doc => {
+                    daysData[doc.id] = doc.data();
+                });
+                setBusinessDays(daysData);
+            });
             
             return () => {
                 unsubscribeProfile();
                 unsubUsers();
                 unsubCollabs();
                 unsubEvals();
+                unsubBusinessDays();
             };
         } else {
             setUserProfile(null);
         }
-    }, [currentUser, usersCollectionPath, collaboratorsCollectionPath, evaluationsCollectionPath]);
+    }, [currentUser]);
 
     const handleLogin = async (email, password) => {
         try {
@@ -197,6 +207,15 @@ const AppProvider = ({ children }) => {
             }
         });
     };
+    
+    const handleSaveBusinessDays = async (year, month, days) => {
+        const docId = `${year}-${String(month + 1).padStart(2, '0')}`;
+        try {
+            await setDoc(doc(db, businessDaysCollectionPath, docId), { days: Number(days) });
+        } catch (error) {
+            console.error("Erro ao salvar dias úteis:", error);
+        }
+    };
 
     const value = {
         isAuthenticated: !!currentUser, 
@@ -206,6 +225,7 @@ const AppProvider = ({ children }) => {
         collaborators: visibleCollaborators, 
         allCollaborators: collaborators, 
         evaluations,
+        businessDays,
         handleLogin, 
         handleLogout,
         handleSaveSystemUser,
@@ -213,6 +233,7 @@ const AppProvider = ({ children }) => {
         handleDeleteCollaborator,
         handleSaveEvaluation,
         handleDeleteEvaluation,
+        handleSaveBusinessDays,
         confirmation,
         setConfirmation
     };
@@ -292,12 +313,11 @@ function AppContent() {
     const [currentView, setCurrentView] = useState('dashboard');
     const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
     const [editingEvaluation, setEditingEvaluation] = useState(null);
-    const [evalModalDateRange, setEvalModalDateRange] = useState({ start: null, end: null });
+    const [evalModalProps, setEvalModalProps] = useState({ dateRange: { start: null, end: null }, collaboratorId: null });
     const [isCollaboratorModalOpen, setIsCollaboratorModalOpen] = useState(false);
     const [editingCollaborator, setEditingCollaborator] = useState(null);
     const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
     const [editingAccessUser, setEditingAccessUser] = useState(null);
-    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     
     const { currentUser, confirmation, setConfirmation } = useContext(AppContext);
 
@@ -310,14 +330,14 @@ function AppContent() {
             <Header />
             <main className="p-4 sm:p-8 max-w-7xl mx-auto">
                 <AppNavigator currentView={currentView} setCurrentView={setCurrentView} />
-                {currentView === 'dashboard' && <DashboardModule onLaunchExportModal={() => setIsExportModalOpen(true)} />}
-                {currentView === 'calendar' && <CalendarModule onLaunchEvalModal={(evalToEdit, dateRange) => { setEditingEvaluation(evalToEdit); setEvalModalDateRange(dateRange); setIsEvalModalOpen(true); }} />}
+                {currentView === 'dashboard' && <DashboardModule />}
+                {currentView === 'calendar' && <CalendarModule onLaunchEvalModal={(evalToEdit, dateRange, collaboratorId) => { setEditingEvaluation(evalToEdit); setEvalModalProps({dateRange, collaboratorId}); setIsEvalModalOpen(true); }} />}
                 {currentUser.role === 'admin' && currentView === 'collaborators' && <CollaboratorManagementModule onLaunchCollaboratorModal={(user) => { setEditingCollaborator(user); setIsCollaboratorModalOpen(true); }} />}
                 {currentUser.role === 'admin' && currentView === 'access' && <AccessControlModule onLaunchAccessModal={(user) => { setEditingAccessUser(user); setIsAccessModalOpen(true); }} />}
+                {currentUser.role === 'admin' && currentView === 'business_days' && <BusinessDaysModule />}
             </main>
             
-            {isExportModalOpen && <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} />}
-            {isEvalModalOpen && <EvaluationModal isOpen={isEvalModalOpen} onClose={() => setIsEvalModalOpen(false)} dateRange={evalModalDateRange} initialData={editingEvaluation} />}
+            {isEvalModalOpen && <EvaluationModal isOpen={isEvalModalOpen} onClose={() => setIsEvalModalOpen(false)} {...evalModalProps} initialData={editingEvaluation} />}
             {isCollaboratorModalOpen && <CollaboratorModal isOpen={isCollaboratorModalOpen} onClose={() => setIsCollaboratorModalOpen(false)} initialData={editingCollaborator} />}
             {isAccessModalOpen && <AccessControlModal isOpen={isAccessModalOpen} onClose={() => setIsAccessModalOpen(false)} initialData={editingAccessUser} />}
             {confirmation.isOpen && <ConfirmationModal isOpen={confirmation.isOpen} onClose={() => setConfirmation({ isOpen: false })} onConfirm={confirmation.onConfirm} title={confirmation.title} message={confirmation.message} />}
@@ -364,6 +384,7 @@ function AppNavigator({ currentView, setCurrentView }) {
                 <>
                     <NavButton view="collaborators" label="Gerenciar Colaboradores" icon={<Users size={16}/>} />
                     <NavButton view="access" label="Controle de Acesso" icon={<ShieldCheck size={16}/>} />
+                    <NavButton view="business_days" label="Dias Úteis" icon={<Cog size={16}/>} />
                 </>
             )}
         </div>
@@ -372,7 +393,7 @@ function AppNavigator({ currentView, setCurrentView }) {
 
 // --- MÓDULOS DE PÁGINA ---
 
-function DashboardModule({ onLaunchExportModal }) {
+function DashboardModule() {
     const { collaborators, evaluations } = useContext(AppContext);
     const [year, setYear] = useState(new Date().getFullYear());
     const [quarter, setQuarter] = useState(getQuarter(new Date()));
@@ -455,9 +476,6 @@ function DashboardModule({ onLaunchExportModal }) {
             <Card>
                 <div className="flex justify-between items-center">
                     <h2 className="text-2xl font-bold">Dashboard de Performance</h2>
-                    <Button onClick={onLaunchExportModal} variant="primary">
-                        <FileSpreadsheet size={16} /> Exportar Relatório
-                    </Button>
                 </div>
                 <div className="flex gap-4 mt-4">
                     <select value={year} onChange={e => setYear(Number(e.target.value))} className="p-2 border rounded-md"><option>2024</option><option>2025</option></select>
