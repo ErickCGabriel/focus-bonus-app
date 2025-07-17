@@ -621,14 +621,69 @@ function CollaboratorManagementModule({ onLaunchCollaboratorModal }) {
     );
 }
 
+function BusinessDaysModule() {
+    const { businessDays, handleSaveBusinessDays } = useContext(AppContext);
+    const [year, setYear] = useState(new Date().getFullYear());
+    const [days, setDays] = useState({});
+
+    useEffect(() => {
+        const yearData = {};
+        for (let i = 0; i < 12; i++) {
+            const monthId = `${year}-${String(i + 1).padStart(2, '0')}`;
+            yearData[i] = businessDays[monthId]?.days || 22; // Default to 22
+        }
+        setDays(yearData);
+    }, [year, businessDays]);
+
+    const handleDayChange = (month, value) => {
+        const newDays = { ...days, [month]: value };
+        setDays(newDays);
+    };
+
+    const handleSave = (month) => {
+        const value = days[month];
+        handleSaveBusinessDays(year, month, value);
+    };
+
+    return (
+        <Card>
+            <h2 className="text-2xl font-bold mb-4">Configurar Dias Úteis</h2>
+            <div className="flex items-center gap-4 mb-6">
+                <label className="font-semibold">Ano:</label>
+                <select value={year} onChange={e => setYear(Number(e.target.value))} className="p-2 border rounded-md">
+                    <option>2024</option>
+                    <option>2025</option>
+                    <option>2026</option>
+                </select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Array.from({length: 12}).map((_, i) => (
+                    <div key={i} className="p-4 border rounded-lg">
+                        <label className="font-bold text-lg">{new Date(year, i).toLocaleString('pt-BR', {month: 'long'})}</label>
+                        <div className="flex items-center gap-2 mt-2">
+                            <input 
+                                type="number" 
+                                value={days[i] || ''} 
+                                onChange={e => handleDayChange(i, e.target.value)} 
+                                className="w-full p-2 border rounded-md"
+                            />
+                            <Button onClick={() => handleSave(i)}><Save size={16}/></Button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </Card>
+    );
+}
+
+
 // --- SUB-COMPONENTES ---
 
 function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurrentDate }) {
     const { evaluations, handleDeleteEvaluation } = useContext(AppContext);
     const [startDate, setStartDate] = useState(null);
     const [endDate, setEndDate] = useState(null);
-    const [selectedDay, setSelectedDay] = useState(null);
-
+    
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const daysInMonth = getDaysInMonth(year, month);
@@ -638,13 +693,13 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
     const collaboratorEvaluations = useMemo(() => evaluations.filter(e => e.collaboratorId === collaboratorId), [evaluations, collaboratorId]);
 
     const handleDayClick = (day) => {
-        setSelectedDay(day);
-        const clickedDate = new Date(year, month, day);
+        const clickedDate = new Date(Date.UTC(year, month, day));
         if (!startDate || (startDate && endDate)) {
             setStartDate(clickedDate);
             setEndDate(null);
         } else if (clickedDate < startDate) {
             setStartDate(clickedDate);
+            setEndDate(null);
         } else {
             setEndDate(clickedDate);
         }
@@ -662,14 +717,23 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
         });
     };
     
-    const formatDate = (date) => date ? new Intl.DateTimeFormat('pt-BR').format(date) : '...';
+    const formatDate = (date) => date ? new Intl.DateTimeFormat('pt-BR', {timeZone: 'UTC'}).format(date) : '...';
+
+    const isDateInRange = (day) => {
+        if (!startDate) return false;
+        const date = new Date(Date.UTC(year, month, day));
+        if (endDate) {
+            return date >= startDate && date <= endDate;
+        }
+        return date.getTime() === startDate.getTime();
+    }
 
     return (
         <Card>
             <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-4">
                      <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100"><ChevronLeft /></button>
-                     <h2 className="text-xl font-bold text-center w-48">{currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}</h2>
+                     <h2 className="text-xl font-bold text-center w-48">{currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).replace(/^\w/, c => c.toUpperCase())}</h2>
                      <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100"><ChevronRight /></button>
                 </div>
             </div>
@@ -678,7 +742,7 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                      <p className="font-semibold text-blue-800">Selecione um período para avaliação:</p>
                      <p className="text-sm text-blue-700">Início: <span className="font-bold">{formatDate(startDate)}</span> | Fim: <span className="font-bold">{formatDate(endDate)}</span></p>
                  </div>
-                 <Button onClick={() => onLaunchEvalModal(null, {start: startDate, end: endDate})} disabled={!startDate || !endDate}><PlusCircle size={16} /> Lançar Avaliação</Button>
+                 <Button onClick={() => onLaunchEvalModal(null, {start: startDate, end: endDate}, collaboratorId)} disabled={!startDate || !endDate}><PlusCircle size={16} /> Lançar Avaliação</Button>
              </div>
             <div className="grid grid-cols-7 gap-1 text-center font-semibold text-gray-600">{weekdays.map(day => <div key={day} className="py-2">{day}</div>)}</div>
             <div className="grid grid-cols-7 gap-1">
@@ -686,15 +750,16 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                 {Array.from({ length: daysInMonth }).map((_, day) => {
                     const dayNumber = day + 1;
                     const dayEvaluations = getEvaluationsForDay(dayNumber);
+                    const isInRange = isDateInRange(dayNumber);
                     return (
-                        <div key={dayNumber} onClick={() => handleDayClick(dayNumber)} className={`p-2 h-28 border rounded-md cursor-pointer transition-colors ${selectedDay === dayNumber ? 'bg-blue-100 border-blue-300' : 'bg-white hover:bg-gray-100'}`}>
+                        <div key={dayNumber} onClick={() => handleDayClick(dayNumber)} className={`p-2 h-28 border rounded-md cursor-pointer transition-colors ${isInRange ? 'bg-blue-100 border-blue-300' : 'bg-white hover:bg-gray-100'}`}>
                             <span className="font-bold">{dayNumber}</span>
                             <div className="mt-1 space-y-1 text-xs text-left">
                                 {dayEvaluations.map(e => (
                                     <div key={e.id} className="p-1 rounded truncate relative group" style={{backgroundColor: e.activityType === 'Escritório' ? '#dcfce7' : '#ffedd5', color: e.activityType === 'Escritório' ? '#166534' : '#9a3412'}}>
                                         {e.csName}
                                         <div className="absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 bg-white/70 backdrop-blur-sm rounded-full px-1">
-                                            <IconButton onClick={(evt) => {evt.stopPropagation(); onLaunchEvalModal(e)}}><Edit size={12}/></IconButton>
+                                            <IconButton onClick={(evt) => {evt.stopPropagation(); onLaunchEvalModal(e, null, collaboratorId)}}><Edit size={12}/></IconButton>
                                             <IconButton onClick={(evt) => {evt.stopPropagation(); handleDeleteEvaluation(e.id)}}><Trash2 size={12}/></IconButton>
                                         </div>
                                     </div>
@@ -720,7 +785,7 @@ function UserSelector({ collaborators, selectedCollaboratorId, setSelectedCollab
 }
 
 function ResultsDashboard({ collaboratorId, currentDate }) {
-    const { collaborators, evaluations } = useContext(AppContext);
+    const { collaborators, evaluations, businessDays } = useContext(AppContext);
     
     const collaborator = collaborators.find(c => c.id === collaboratorId);
     const monthlyData = useMemo(() => {
@@ -733,13 +798,14 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
                    evalDate.getMonth() === currentDate.getMonth();
         });
 
-        let officePossiblePoints = 0, officeObtainedPoints = 0, fieldBonus = 0;
+        let officeDaysWorked = 0, fieldBonus = 0;
+        const monthId = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+        const totalBusinessDays = businessDays[monthId]?.days || 22;
 
         const officeEvals = myEvals.filter(e => e.activityType === 'Escritório');
         officeEvals.forEach(e => {
             const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
-            officePossiblePoints += duration * 3;
-            officeObtainedPoints += duration * Object.values(e.criteria).reduce((sum, val) => sum + (val || 0), 0);
+            officeDaysWorked += duration;
         });
 
         const fieldEvals = myEvals.filter(e => e.activityType === 'Campo');
@@ -751,18 +817,17 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
             }
         });
 
-        const officePercentage = officePossiblePoints > 0 ? (officeObtainedPoints / officePossiblePoints) * 100 : 0;
-        const officeBonus = officePercentage > 80 ? 200 : 0;
+        const officeBonus = totalBusinessDays > 0 ? (officeDaysWorked / totalBusinessDays) * 200 : 0;
         
-        return { officePercentage, officeBonus, fieldBonus, officePossiblePoints, officeObtainedPoints };
-    }, [collaboratorId, evaluations, currentDate]);
+        return { officeBonus, fieldBonus, officeDaysWorked, totalBusinessDays };
+    }, [collaboratorId, evaluations, currentDate, businessDays]);
 
     return (
         <Card>
-            <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><BarChart3 /> Resumo de {currentDate.toLocaleDateString('pt-BR', { month: 'long' })}</h3>
+            <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><BarChart3 /> Resumo de {currentDate.toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' })}</h3>
             <p className="mb-4 text-sm font-semibold text-gray-700">Colaborador: {collaborator?.name || 'N/A'}</p>
             <div className="space-y-4">
-                <div className="p-3 bg-green-50 rounded-lg"><p className="font-bold text-green-800">Bônus Escritório</p><p className="text-2xl font-bold text-green-700">R$ {monthlyData.officeBonus.toFixed(2)}</p><p className="text-sm text-green-600">Performance: {monthlyData.officePercentage.toFixed(1)}% ({monthlyData.officeObtainedPoints}/{monthlyData.officePossiblePoints} pts)</p><div className="w-full bg-green-200 rounded-full h-2 mt-1"><div className="bg-green-600 h-2 rounded-full" style={{ width: `${monthlyData.officePercentage}%` }}></div></div></div>
+                <div className="p-3 bg-green-50 rounded-lg"><p className="font-bold text-green-800">Bônus Escritório</p><p className="text-2xl font-bold text-green-700">R$ {monthlyData.officeBonus.toFixed(2)}</p><p className="text-sm text-green-600">{monthlyData.officeDaysWorked} de {monthlyData.totalBusinessDays} dias úteis trabalhados</p></div>
                 <div className="p-3 bg-orange-50 rounded-lg"><p className="font-bold text-orange-800">Bônus Campo (Diárias)</p><p className="text-2xl font-bold text-orange-700">R$ {monthlyData.fieldBonus.toFixed(2)}</p><p className="text-sm text-orange-600">Valor acumulado no mês.</p></div>
                 <div className="p-3 bg-blue-50 rounded-lg border-t-2 border-blue-200 mt-4"><p className="font-bold text-blue-800">Total Bônus no Mês</p><p className="text-3xl font-bold text-blue-700">R$ {(monthlyData.officeBonus + monthlyData.fieldBonus).toFixed(2)}</p></div>
             </div>
@@ -788,113 +853,11 @@ function ConfirmationModal({ isOpen, onClose, onConfirm, title, message }) {
     );
 }
 
-function ExportModal({ isOpen, onClose }) {
-    const { collaborators } = useContext(AppContext);
-    const [selectedCollaborators, setSelectedCollaborators] = useState([]);
-    const [exportPeriod, setExportPeriod] = useState('monthly');
-    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-    const [selectedQuarter, setSelectedQuarter] = useState(getQuarter(new Date()));
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-
-    const handleSelectAll = (e) => {
-        if (e.target.checked) {
-            setSelectedCollaborators(collaborators.map(c => c.id));
-        } else {
-            setSelectedCollaborators([]);
-        }
-    };
-
-    const handleCollaboratorChange = (id) => {
-        setSelectedCollaborators(prev => 
-            prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
-        );
-    };
-
-    const handleExport = () => {
-        console.log("Exportando dados para:", {
-            collaboratorIds: selectedCollaborators,
-            period: exportPeriod,
-            month: selectedMonth,
-            quarter: selectedQuarter,
-            year: selectedYear,
-        });
-        alert('Funcionalidade de exportação em desenvolvimento. Verifique o console para ver os dados selecionados.');
-        onClose();
-    };
-    
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <Card className="w-full max-w-2xl">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold">Configurar Relatório de Exportação</h2>
-                    <IconButton onClick={onClose}><X /></IconButton>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div>
-                        <h3 className="font-bold mb-3">1. Selecione os Colaboradores</h3>
-                        <div className="p-3 border rounded-lg max-h-64 overflow-y-auto">
-                            <div className="flex items-center p-2 border-b">
-                                <input type="checkbox" id="select-all" onChange={handleSelectAll} checked={selectedCollaborators.length === collaborators.length && collaborators.length > 0} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"/>
-                                <label htmlFor="select-all" className="ml-3 block text-sm font-bold text-gray-900">Selecionar Todos</label>
-                            </div>
-                            {collaborators.map(c => (
-                                <div key={c.id} className="flex items-center p-2">
-                                    <input type="checkbox" id={`collab-${c.id}`} checked={selectedCollaborators.includes(c.id)} onChange={() => handleCollaboratorChange(c.id)} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"/>
-                                    <label htmlFor={`collab-${c.id}`} className="ml-3 block text-sm text-gray-700">{c.name}</label>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                        <h3 className="font-bold mb-3">2. Selecione o Período</h3>
-                        <div className="space-y-4">
-                            <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="w-full p-2 border rounded-md">
-                                <option>2024</option>
-                                <option>2025</option>
-                            </select>
-                            <div className="space-y-2">
-                                <div className="flex items-center"><input type="radio" id="monthly" name="period" value="monthly" checked={exportPeriod === 'monthly'} onChange={(e) => setExportPeriod(e.target.value)} className="h-4 w-4"/><label htmlFor="monthly" className="ml-2">Mensal</label></div>
-                                <div className="flex items-center"><input type="radio" id="quarterly" name="period" value="quarterly" checked={exportPeriod === 'quarterly'} onChange={(e) => setExportPeriod(e.target.value)} className="h-4 w-4"/><label htmlFor="quarterly" className="ml-2">Trimestral</label></div>
-                                <div className="flex items-center"><input type="radio" id="yearly" name="period" value="yearly" checked={exportPeriod === 'yearly'} onChange={(e) => setExportPeriod(e.target.value)} className="h-4 w-4"/><label htmlFor="yearly" className="ml-2">Anual</label></div>
-                            </div>
-                            {exportPeriod === 'monthly' && (
-                                <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="w-full p-2 border rounded-md">
-                                    {Array.from({length: 12}).map((_, i) => <option key={i} value={i}>{new Date(0, i).toLocaleString('pt-BR', {month: 'long'})}</option>)}
-                                </select>
-                            )}
-                            {exportPeriod === 'quarterly' && (
-                                <select value={selectedQuarter} onChange={e => setSelectedQuarter(Number(e.target.value))} className="w-full p-2 border rounded-md">
-                                    <option value={1}>1º Trimestre</option>
-                                    <option value={2}>2º Trimestre</option>
-                                    <option value={3}>3º Trimestre</option>
-                                    <option value={4}>4º Trimestre</option>
-                                </select>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="flex justify-end gap-3 mt-8">
-                    <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-                    <Button variant="primary" onClick={handleExport} disabled={selectedCollaborators.length === 0}>
-                        <FileSpreadsheet size={16}/> Exportar
-                    </Button>
-                </div>
-            </Card>
-        </div>
-    );
-}
-
-function EvaluationModal({ isOpen, onClose, dateRange, initialData }) {
-    const { handleSaveEvaluation, collaborators, currentUser } = useContext(AppContext);
+function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaboratorId }) {
+    const { handleSaveEvaluation, collaborators } = useContext(AppContext);
     const [formData, setFormData] = useState(null);
     const [error, setError] = useState('');
-    const [selectedCollaboratorId, setSelectedCollaboratorId] = useState(null);
-
+    
     useEffect(() => {
         const defaultData = {
             startDate: dateRange?.start?.toISOString().split('T')[0] || '',
@@ -903,11 +866,11 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData }) {
             csName: '',
             observation: '',
             criteria: { prazo: 1, qualidade: 1, apontamento: 1 },
+            collaboratorId: collaboratorId
         };
         const dataToEdit = initialData ? { ...initialData } : defaultData;
         setFormData(dataToEdit);
-        setSelectedCollaboratorId(dataToEdit.collaboratorId || collaborators[0]?.id);
-    }, [initialData, dateRange, collaborators]);
+    }, [initialData, dateRange, collaboratorId]);
 
     useEffect(() => {
         if (formData) {
@@ -927,11 +890,12 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData }) {
             setError('O nome da CS é obrigatório.');
             return;
         }
-        handleSaveEvaluation({ ...formData, collaboratorId: selectedCollaboratorId });
+        handleSaveEvaluation(formData);
         onClose();
     };
 
     if (!isOpen || !formData) return null;
+    const selectedCollaborator = collaborators.find(c => c.id === formData.collaboratorId);
 
     return (
          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -940,11 +904,9 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData }) {
                  <div className="space-y-4">
                      <div>
                          <label className="block text-sm font-medium text-gray-700">Colaborador</label>
-                         <select value={selectedCollaboratorId || ''} onChange={e => setSelectedCollaboratorId(e.target.value)} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData || currentUser.role === 'manager'}>
-                             {collaborators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                         </select>
+                         <input type="text" value={selectedCollaborator?.name || ''} className="mt-1 block w-full p-2 border rounded-md bg-gray-100" disabled />
                      </div>
-                     <p className="font-semibold bg-gray-100 p-2 rounded-md">Período: {new Date(formData.startDate+'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(formData.endDate+'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                     <p className="font-semibold bg-gray-100 p-2 rounded-md">Período: {new Date(formData.startDate+'T00:00:00').toLocaleDateString('pt-BR', {timeZone: 'UTC'})} a {new Date(formData.endDate+'T00:00:00').toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
                      <div><label className="block text-sm font-medium text-gray-700">Tipo de Atividade</label><div className="mt-1 grid grid-cols-2 gap-2"><button onClick={() => setFormData(f => ({...f, activityType: 'Escritório'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Escritório' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Briefcase size={16}/> Escritório</button><button onClick={() => setFormData(f => ({...f, activityType: 'Campo'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Campo' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Mountain size={16}/> Campo</button></div></div>
                      <div><label className="block text-sm font-medium text-gray-700">Nome da CS (Contrato)</label><input type="text" value={formData.csName} onChange={e => {setFormData(f => ({...f, csName: e.target.value})); setError('')}} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : 'border-gray-300'}`} />{error && <p className="text-red-500 text-xs mt-1">{error}</p>}</div>
                      <div><label className="block text-sm font-medium text-gray-700">Critérios</label>
