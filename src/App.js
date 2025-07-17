@@ -32,7 +32,6 @@ const getMonthsForQuarter = (q) => {
     if (q === 4) return [9, 10, 11];
     return [];
 };
-// Helper para parsear datas YYYY-MM-DD sem problemas de fuso horário
 const parseDate = (dateString) => {
     const [year, month, day] = dateString.split('-').map(Number);
     return new Date(Date.UTC(year, month - 1, day));
