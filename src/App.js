@@ -32,11 +32,11 @@ const getMonthsForQuarter = (q) => {
     if (q === 4) return [9, 10, 11];
     return [];
 };
-const parseDate = (dateString) => {
-    const [year, month, day] = dateString.split('-').map(Number);
-    return new Date(Date.UTC(year, month - 1, day));
-};
 
+const parseDate = (dateString) => {
+    const [year, month, day] = dateString.split("-").map(Number);
+    return new Date(year, month - 1, day);
+};
 const Card = ({ children, className = '' }) => <div className={`bg-white rounded-lg shadow-md p-6 ${className}`}>{children}</div>;
 const Button = ({ children, onClick, className = '', variant = 'primary', type = 'button', disabled = false }) => {
     const baseClasses = 'px-4 py-2 rounded-md font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -693,7 +693,7 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
     const collaboratorEvaluations = useMemo(() => evaluations.filter(e => e.collaboratorId === collaboratorId), [evaluations, collaboratorId]);
 
     const handleDayClick = (day) => {
-        const clickedDate = new Date(Date.UTC(year, month, day));
+        const clickedDate = new Date(year, month, day);
         if (!startDate || (startDate && endDate)) {
             setStartDate(clickedDate);
             setEndDate(null);
@@ -709,7 +709,7 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
     const handleNextMonth = () => setCurrentDate(new Date(year, month + 1, 15));
 
     const getEvaluationsForDay = (day) => {
-        const date = new Date(Date.UTC(year, month, day));
+        const date = new Date(year, month, day);
         return collaboratorEvaluations.filter(e => {
             const start = parseDate(e.startDate);
             const end = parseDate(e.endDate);
@@ -717,11 +717,11 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
         });
     };
     
-    const formatDate = (date) => date ? new Intl.DateTimeFormat('pt-BR', {timeZone: 'UTC'}).format(date) : '...';
+    const formatDate = (date) => date ? new Intl.DateTimeFormat('pt-BR').format(date) : '...';
 
     const isDateInRange = (day) => {
         if (!startDate) return false;
-        const date = new Date(Date.UTC(year, month, day));
+        const date = new Date(year, month, day);
         if (endDate) {
             return date >= startDate && date <= endDate;
         }
@@ -733,7 +733,7 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
             <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-4">
                      <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100"><ChevronLeft /></button>
-                     <h2 className="text-xl font-bold text-center w-48">{currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).replace(/^\w/, c => c.toUpperCase())}</h2>
+                     <h2 className="text-xl font-bold text-center w-48">{currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}</h2>
                      <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100"><ChevronRight /></button>
                 </div>
             </div>
@@ -824,7 +824,7 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
 
     return (
         <Card>
-            <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><BarChart3 /> Resumo de {currentDate.toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' })}</h3>
+            <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><BarChart3 /> Resumo de {currentDate.toLocaleDateString('pt-BR', { month: 'long' })}</h3>
             <p className="mb-4 text-sm font-semibold text-gray-700">Colaborador: {collaborator?.name || 'N/A'}</p>
             <div className="space-y-4">
                 <div className="p-3 bg-green-50 rounded-lg"><p className="font-bold text-green-800">Bônus Escritório</p><p className="text-2xl font-bold text-green-700">R$ {monthlyData.officeBonus.toFixed(2)}</p><p className="text-sm text-green-600">{monthlyData.officeDaysWorked} de {monthlyData.totalBusinessDays} dias úteis trabalhados</p></div>
@@ -860,11 +860,11 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
     
     useEffect(() => {
         const defaultData = {
-            startDate: dateRange?.start?.toISOString().split('T')[0] || '',
-            endDate: dateRange?.end?.toISOString().split('T')[0] || '',
-            activityType: 'Escritório',
-            csName: '',
-            observation: '',
+            startDate: dateRange?.start ? new Date(dateRange.start.getFullYear(), dateRange.start.getMonth(), dateRange.start.getDate()).toISOString().split("T")[0] : "",
+            endDate: dateRange?.end ? new Date(dateRange.end.getFullYear(), dateRange.end.getMonth(), dateRange.end.getDate()).toISOString().split("T")[0] : "",
+            activityType: "Escritório",
+            csName: "",
+            observation: "",
             criteria: { prazo: 1, qualidade: 1, apontamento: 1 },
             collaboratorId: collaboratorId
         };
@@ -906,7 +906,7 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
                          <label className="block text-sm font-medium text-gray-700">Colaborador</label>
                          <input type="text" value={selectedCollaborator?.name || ''} className="mt-1 block w-full p-2 border rounded-md bg-gray-100" disabled />
                      </div>
-                     <p className="font-semibold bg-gray-100 p-2 rounded-md">Período: {new Date(formData.startDate+'T00:00:00').toLocaleDateString('pt-BR', {timeZone: 'UTC'})} a {new Date(formData.endDate+'T00:00:00').toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
+                     <p className="font-semibold bg-gray-100 p-2 rounded-md">Período: {new Date(formData.startDate+'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(formData.endDate+'T00:00:00').toLocaleDateString('pt-BR')}</p>
                      <div><label className="block text-sm font-medium text-gray-700">Tipo de Atividade</label><div className="mt-1 grid grid-cols-2 gap-2"><button onClick={() => setFormData(f => ({...f, activityType: 'Escritório'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Escritório' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Briefcase size={16}/> Escritório</button><button onClick={() => setFormData(f => ({...f, activityType: 'Campo'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Campo' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Mountain size={16}/> Campo</button></div></div>
                      <div><label className="block text-sm font-medium text-gray-700">Nome da CS (Contrato)</label><input type="text" value={formData.csName} onChange={e => {setFormData(f => ({...f, csName: e.target.value})); setError('')}} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : 'border-gray-300'}`} />{error && <p className="text-red-500 text-xs mt-1">{error}</p>}</div>
                      <div><label className="block text-sm font-medium text-gray-700">Critérios</label>
