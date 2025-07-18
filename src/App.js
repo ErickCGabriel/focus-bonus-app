@@ -803,12 +803,32 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
         const totalBusinessDays = businessDays[monthId]?.days || 22;
 
         const officeEvals = myEvals.filter(e => e.activityType === 'Escritório');
+        let officePossiblePoints = 0, officeObtainedPoints = 0;
+        
         officeEvals.forEach(e => {
             const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
             officeDaysWorked += duration;
+            
+            // Calcular pontos possíveis e obtidos para a média
+            officePossiblePoints += duration * 3; // 3 critérios por dia
+            officeObtainedPoints += duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0);
         });
-
+        
+        // Calcular a média de performance do escritório
+        const officePerformancePercentage = officePossiblePoints > 0 ? (officeObtainedPoints / officePossiblePoints) * 100 : 0;
+        
+        let officeBonus = totalBusinessDays > 0 ? (officeDaysWorked / totalBusinessDays) * 200 : 0;
+        
+        // Se a média for menor que 80%, zerar o bônus de escritório
+        if (officePerformancePercentage < 80) {
+            officeBonus = 0;
+        }
+        
         const fieldEvals = myEvals.filter(e => e.activityType === 'Campo');
+        
+        // Verificar se alguma avaliação de campo tem "equipamento" como "Não" (0)
+        const hasEquipmentFailure = fieldEvals.some(e => e.criteria.equipamento === 0);
+        
         fieldEvals.forEach(e => {
             const allCriteriaMet = Object.values(e.criteria).every((v)=>v===1);
             if (allCriteriaMet) {
@@ -816,8 +836,11 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
                 fieldBonus += duration * 60;
             }
         });
-
-        const officeBonus = totalBusinessDays > 0 ? (officeDaysWorked / totalBusinessDays) * 200 : 0;
+        
+        // Se alguma avaliação de campo teve problema com equipamento, zerar o bônus de campo
+        if (hasEquipmentFailure) {
+            fieldBonus = 0;
+        }
         
         return { officeBonus, fieldBonus, officeDaysWorked, totalBusinessDays };
     }, [collaboratorId, evaluations, currentDate, businessDays]);
