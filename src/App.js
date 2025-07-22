@@ -125,7 +125,10 @@ const AppProvider = ({ children }) => {
     const visibleCollaborators = useMemo(() => {
         if (!userProfile) return [];
         if (userProfile.role === 'admin') return collaborators;
-        if (userProfile.role === 'manager') return collaborators.filter(c => c.team === userProfile.team);
+        if (userProfile.role === 'manager') {
+            const userTeams = Array.isArray(userProfile.team) ? userProfile.team : [userProfile.team];
+            return collaborators.filter(c => userTeams.includes(c.team));
+        }
         return [];
     }, [userProfile, collaborators]);
     
@@ -348,6 +351,18 @@ function AppContent() {
 // --- COMPONENTES DE NAVEGAÇÃO E CABEÇALHO ---
 function Header() {
     const { currentUser, handleLogout } = useContext(AppContext);
+    
+    const getTeamDisplay = () => {
+        if (currentUser.role !== 'manager') return 'Administrador';
+        
+        const teams = Array.isArray(currentUser.team) ? currentUser.team : [currentUser.team];
+        if (teams.length === 1) {
+            return `Gestor - ${teams[0]}`;
+        } else {
+            return `Gestor - ${teams.length} equipes`;
+        }
+    };
+    
     return (
         <header className="bg-white shadow-sm">
             <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 flex justify-between items-center">
@@ -358,7 +373,7 @@ function Header() {
                 <div className="flex items-center gap-4">
                     <div className="text-right">
                         <p className="font-semibold">{currentUser.name}</p>
-                        <p className="text-sm text-gray-500 capitalize">{currentUser.role === 'manager' ? `Gestor - ${currentUser.team}` : 'Administrador'}</p>
+                        <p className="text-sm text-gray-500 capitalize">{getTeamDisplay()}</p>
                     </div>
                     <Button onClick={handleLogout} variant="secondary">
                         <LogOut size={16} /> Sair
@@ -573,6 +588,18 @@ function CalendarModule({ onLaunchEvalModal }) {
 
 function AccessControlModule({ onLaunchAccessModal }) {
     const { users } = useContext(AppContext);
+    
+    const getTeamDisplay = (user) => {
+        if (user.role !== 'manager') return user.role;
+        
+        const teams = Array.isArray(user.team) ? user.team : [user.team];
+        if (teams.length === 1) {
+            return `${user.role} - ${teams[0]}`;
+        } else {
+            return `${user.role} - ${teams.join(', ')}`;
+        }
+    };
+    
     return (
         <Card>
             <div className="flex justify-between items-center mb-6">
@@ -585,7 +612,7 @@ function AccessControlModule({ onLaunchAccessModal }) {
                         <div>
                             <p className="font-bold text-lg">{user.name}</p>
                             <p className="text-sm text-gray-600">{user.email}</p>
-                            <p className="text-xs font-semibold uppercase text-blue-600 mt-1">{user.role}{user.role === 'manager' && ` - ${user.team}`}</p>
+                            <p className="text-xs font-semibold uppercase text-blue-600 mt-1">{getTeamDisplay(user)}</p>
                         </div>
                         <div className="flex items-center gap-3">
                             <IconButton onClick={() => onLaunchAccessModal(user)}><Edit size={18} /></IconButton>
@@ -1010,10 +1037,27 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
     const [formData, setFormData] = useState(null);
 
     useEffect(() => {
-        setFormData(initialData ? { ...initialData } : { name: '', email: '', password: '', role: 'manager', team: 'Projetos' });
+        const defaultTeams = initialData?.team ? (Array.isArray(initialData.team) ? initialData.team : [initialData.team]) : ['Projetos'];
+        setFormData(initialData ? { ...initialData, team: defaultTeams } : { name: '', email: '', password: '', role: 'manager', team: ['Projetos'] });
     }, [initialData]);
 
     const handleChange = (field, value) => setFormData(f => ({ ...f, [field]: value }));
+    
+    const handleTeamToggle = (teamName) => {
+        setFormData(f => {
+            const currentTeams = f.team || [];
+            const isSelected = currentTeams.includes(teamName);
+            
+            if (isSelected) {
+                // Remove a equipe se já estiver selecionada
+                return { ...f, team: currentTeams.filter(t => t !== teamName) };
+            } else {
+                // Adiciona a equipe se não estiver selecionada
+                return { ...f, team: [...currentTeams, teamName] };
+            }
+        });
+    };
+    
     const handleSave = () => {
         handleSaveSystemUser(formData);
         onClose();
@@ -1036,12 +1080,30 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     <div><label className="block text-sm font-medium">Senha</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" placeholder="Deixe em branco para não alterar"/></div>
                     <div><label className="block text-sm font-medium">Função</label><select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md"><option value="manager">Gestor</option><option value="admin">Administrador</option></select></div>
                     {formData.role === 'manager' && (
-                        <div><label className="block text-sm font-medium">Equipe</label><select value={formData.team} onChange={e => handleChange('team', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">{teams.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                        <div>
+                            <label className="block text-sm font-medium mb-2">Equipes (selecione uma ou mais)</label>
+                            <div className="space-y-2 p-3 bg-gray-50 rounded-md max-h-40 overflow-y-auto">
+                                {teams.map(team => (
+                                    <label key={team} className="flex items-center space-x-2 cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={formData.team.includes(team)}
+                                            onChange={() => handleTeamToggle(team)}
+                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm font-medium text-gray-700">{team}</span>
+                                    </label>
+                                ))}
+                            </div>
+                            {formData.team.length === 0 && (
+                                <p className="text-red-500 text-xs mt-1">Selecione pelo menos uma equipe.</p>
+                            )}
+                        </div>
                     )}
                 </div>
                 <div className="flex justify-end gap-3 mt-8">
                     <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-                    <Button variant="primary" onClick={handleSave}><Save size={16}/> Salvar</Button>
+                    <Button variant="primary" onClick={handleSave} disabled={formData.role === 'manager' && formData.team.length === 0}><Save size={16}/> Salvar</Button>
                 </div>
             </Card>
         </div>
