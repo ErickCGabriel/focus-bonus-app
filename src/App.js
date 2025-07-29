@@ -35,7 +35,6 @@ const getMonthsForQuarter = (q) => {
 
 const parseDate = (dateString) => {
     if (!dateString || typeof dateString !== 'string') {
-        // Retorna uma data inválida se a string for nula, indefinida ou não for uma string
         return new Date(NaN);
     }
     const [year, month, day] = dateString.split("-").map(Number);
@@ -52,6 +51,58 @@ const Button = ({ children, onClick, className = '', variant = 'primary', type =
     return <button type={type} onClick={onClick} disabled={disabled} className={`${baseClasses} ${variants[variant]} ${className}`}>{children}</button>;
 };
 const IconButton = ({ children, onClick }) => <button onClick={onClick} className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-full">{children}</button>;
+
+
+// --- LÓGICA DE CÁLCULO DE BÔNUS (HELPER) ---
+const calculateMonthlyBonus = (collaboratorId, allEvaluations, businessDays, year, month) => {
+    const myEvals = allEvaluations.filter(e => {
+        const evalDate = parseDate(e.startDate);
+        return e.collaboratorId === collaboratorId &&
+               evalDate.getFullYear() === year &&
+               evalDate.getMonth() === month;
+    });
+
+    let officeDaysWorked = 0;
+    let fieldBonus = 0;
+    const monthId = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const totalBusinessDays = businessDays[monthId]?.days || 22;
+
+    const officeEvals = myEvals.filter(e => e.activityType === 'Escritório');
+    let officePossiblePoints = 0;
+    let officeObtainedPoints = 0;
+
+    officeEvals.forEach(e => {
+        const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
+        officeDaysWorked += duration;
+        officePossiblePoints += duration * 3;
+        officeObtainedPoints += duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0);
+    });
+
+    const officePerformancePercentage = officePossiblePoints > 0 ? (officeObtainedPoints / officePossiblePoints) * 100 : 0;
+    let officeBonus = totalBusinessDays > 0 ? (officeDaysWorked / totalBusinessDays) * 200 : 0;
+
+    if (officePerformancePercentage < 80) {
+        officeBonus = 0;
+    }
+
+    const fieldEvals = myEvals.filter(e => e.activityType === 'Campo');
+    const hasEquipmentFailureInMonth = fieldEvals.some(e => e.criteria.equipamento === 0);
+
+    fieldEvals.forEach(e => {
+        const allCriteriaMet = Object.values(e.criteria).every((v) => v === 1);
+        if (allCriteriaMet) {
+            const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
+            fieldBonus += duration * 60;
+        }
+    });
+
+    if (hasEquipmentFailureInMonth) {
+        fieldBonus = 0;
+    }
+
+    return { officeBonus, fieldBonus, totalBonus: officeBonus + fieldBonus, officeDaysWorked, totalBusinessDays, officeEvals: officeEvals.length, fieldEvals: fieldEvals.length };
+};
+
 
 // --- CONTEXTO GLOBAL DA APLICAÇÃO ---
 const AppContext = createContext();
@@ -138,8 +189,7 @@ const AppProvider = ({ children }) => {
             return collaborators.filter(c => userTeams.includes(c.team));
         }
         if (userProfile.role === 'collaborator') {
-            // Colaborador só vê seus próprios dados
-            return collaborators.filter(c => c.name === userProfile.name);
+            return collaborators.filter(c => c.id === userProfile.collaboratorId);
         }
         return [];
     }, [userProfile, collaborators]);
@@ -949,60 +999,14 @@ function UserSelector({ collaborators, selectedCollaboratorId, setSelectedCollab
 }
 
 function ResultsDashboard({ collaboratorId, currentDate }) {
-    const { collaborators, evaluations, businessDays } = useContext(AppContext);
+    const { allCollaborators, evaluations, businessDays } = useContext(AppContext);
     
-    const collaborator = collaborators.find(c => c.id === collaboratorId);
+    const collaborator = allCollaborators.find(c => c.id === collaboratorId);
+    
     const monthlyData = useMemo(() => {
-        if (!collaboratorId) return { officePercentage: 0, officeBonus: 0, fieldBonus: 0, officePossiblePoints: 0, officeObtainedPoints: 0 };
-        
-        const myEvals = evaluations.filter(e => {
-            const evalDate = parseDate(e.startDate);
-            return e.collaboratorId === collaboratorId && 
-                   evalDate.getFullYear() === currentDate.getFullYear() && 
-                   evalDate.getMonth() === currentDate.getMonth();
-        });
-
-        let officeDaysWorked = 0, fieldBonus = 0;
-        const monthId = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-        const totalBusinessDays = businessDays[monthId]?.days || 22;
-
-        const officeEvals = myEvals.filter(e => e.activityType === 'Escritório');
-        let officePossiblePoints = 0, officeObtainedPoints = 0;
-        
-        officeEvals.forEach(e => {
-            const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
-            officeDaysWorked += duration;
-            
-            officePossiblePoints += duration * 3; // 3 critérios por dia
-            officeObtainedPoints += duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0);
-        });
-        
-        const officePerformancePercentage = officePossiblePoints > 0 ? (officeObtainedPoints / officePossiblePoints) * 100 : 0;
-        
-        let officeBonus = totalBusinessDays > 0 ? (officeDaysWorked / totalBusinessDays) * 200 : 0;
-        
-        if (officePerformancePercentage < 80) {
-            officeBonus = 0;
-        }
-        
-        const fieldEvals = myEvals.filter(e => e.activityType === 'Campo');
-        
-        const hasEquipmentFailure = fieldEvals.some(e => e.criteria.equipamento === 0);
-        
-        fieldEvals.forEach(e => {
-            const allCriteriaMet = Object.values(e.criteria).every((v)=>v===1);
-            if (allCriteriaMet) {
-                const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
-                fieldBonus += duration * 60;
-            }
-        });
-        
-        if (hasEquipmentFailure) {
-            fieldBonus = 0;
-        }
-        
-        return { officeBonus, fieldBonus, officeDaysWorked, totalBusinessDays };
-    }, [collaboratorId, evaluations, currentDate, businessDays]);
+        if (!collaboratorId) return { officeBonus: 0, fieldBonus: 0, officeDaysWorked: 0, totalBusinessDays: 0 };
+        return calculateMonthlyBonus(collaboratorId, evaluations, businessDays, currentDate.getFullYear(), currentDate.getMonth());
+    }, [collaboratorId, evaluations, businessDays, currentDate]);
 
     return (
         <Card>
@@ -1036,7 +1040,7 @@ function ConfirmationModal({ isOpen, onClose, onConfirm, title, message }) {
 }
 
 function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaboratorId }) {
-    const { handleSaveEvaluation, collaborators } = useContext(AppContext);
+    const { handleSaveEvaluation, allCollaborators } = useContext(AppContext);
     const [formData, setFormData] = useState(null);
     const [error, setError] = useState('');
     
@@ -1055,17 +1059,20 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
     }, [initialData, dateRange, collaboratorId]);
 
     useEffect(() => {
-        if (formData) {
-            let newCriteria;
+        if (formData && formData.activityType) {
+            let newCriteria = {};
             const currentCriteria = formData.criteria || {};
             if (formData.activityType === 'Escritório') {
                 newCriteria = { prazo: currentCriteria.prazo ?? 1, qualidade: currentCriteria.qualidade ?? 1, apontamento: currentCriteria.apontamento ?? 1 };
             } else {
                 newCriteria = { prazo: currentCriteria.prazo ?? 1, despesa: currentCriteria.despesa ?? 1, qualidade: currentCriteria.qualidade ?? 1, equipamento: currentCriteria.equipamento ?? 1 };
             }
-            setFormData(f => ({ ...f, criteria: newCriteria }));
+            if (JSON.stringify(newCriteria) !== JSON.stringify(currentCriteria)) {
+                setFormData(f => ({ ...f, criteria: newCriteria }));
+            }
         }
-    }, [formData?.activityType]);
+    }, [formData?.activityType, formData?.criteria]);
+
 
     const handleSave = () => {
         if (!formData.csName.trim()) {
@@ -1077,7 +1084,7 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
     };
 
     if (!isOpen || !formData) return null;
-    const selectedCollaborator = collaborators.find(c => c.id === formData.collaboratorId);
+    const selectedCollaborator = allCollaborators.find(c => c.id === formData.collaboratorId);
 
     return (
          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -1243,76 +1250,43 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
 
 // --- MÓDULO DE VISUALIZAÇÃO DO COLABORADOR ---
 function CollaboratorViewModule() {
-    const { currentUser, evaluations, businessDays } = useContext(AppContext);
+    const { currentUser, allCollaborators, evaluations, businessDays } = useContext(AppContext);
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     
     const collaborator = useMemo(() => {
-        return { name: currentUser.name, team: currentUser.team || 'N/A' };
-    }, [currentUser]);
+        return allCollaborators.find(c => c.id === currentUser.collaboratorId);
+    }, [currentUser, allCollaborators]);
     
     const monthlyData = useMemo(() => {
         const months = [];
-        const currentDate = new Date();
+        const currentEvalDate = new Date();
         
         for (let i = 11; i >= 0; i--) {
-            const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+            const date = new Date(currentEvalDate.getFullYear(), currentEvalDate.getMonth() - i, 1);
             const year = date.getFullYear();
             const month = date.getMonth();
             
-            const monthEvaluations = evaluations.filter(e => {
-                // CORREÇÃO: Usar e.startDate em vez de e.date
-                const evalDate = parseDate(e.startDate);
-                return evalDate.getFullYear() === year && 
-                       evalDate.getMonth() === month && 
-                       e.csName === collaborator.name;
-            });
-            
-            const officeEvals = monthEvaluations.filter(e => e.activityType === 'Escritório');
-            const fieldEvals = monthEvaluations.filter(e => e.activityType === 'Campo');
-            
-            let officeBonus = 0;
-            if (officeEvals.length > 0) {
-                const totalCriteria = officeEvals.reduce((sum, e) => sum + Object.keys(e.criteria).length, 0);
-                const totalPositive = officeEvals.reduce((sum, e) => sum + Object.values(e.criteria).filter(v => v === 1).length, 0);
-                const officePercentage = totalCriteria > 0 ? (totalPositive / totalCriteria) * 100 : 0;
-                
-                if (officePercentage >= 80) {
-                    officeBonus = (officePercentage / 100) * 9.09;
-                }
-            }
-            
-            let fieldBonus = 0;
-            if (fieldEvals.length > 0) {
-                const businessDaysInMonth = businessDays[`${year}-${String(month + 1).padStart(2, '0')}`]?.days || 22;
-                const fieldDaysWorked = fieldEvals.length;
-                const fieldPercentage = (fieldDaysWorked / businessDaysInMonth) * 100;
-                
-                const hasEquipmentIssue = fieldEvals.some(e => e.criteria['Equip./Veículo'] === 0);
-                
-                if (!hasEquipmentIssue) {
-                    fieldBonus = (fieldPercentage / 100) * 9.09;
-                }
-            }
+            const bonusData = collaborator ? calculateMonthlyBonus(collaborator.id, evaluations, businessDays, year, month) : { totalBonus: 0 };
             
             months.push({
                 year,
                 month,
                 monthName: date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-                officeEvaluations: officeEvals,
-                fieldEvaluations: fieldEvals,
-                officeBonus: officeBonus,
-                fieldBonus: fieldBonus,
-                totalBonus: officeBonus + fieldBonus,
-                isPaid: false
+                totalBonus: bonusData.totalBonus,
+                isPaid: false 
             });
         }
         
         return months.reverse();
-    }, [evaluations, collaborator.name, businessDays]);
+    }, [evaluations, collaborator, businessDays]);
     
     const selectedMonthData = monthlyData.find(m => m.month === selectedMonth && m.year === selectedYear);
     
+    if (!collaborator) {
+        return <Card><p>Dados do colaborador não encontrados.</p></Card>
+    }
+
     return (
         <div className="space-y-6">
             <Card>
@@ -1323,8 +1297,8 @@ function CollaboratorViewModule() {
                         <p className="text-2xl font-bold text-blue-600">{collaborator.team}</p>
                     </div>
                     <div className="bg-green-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-green-800">Total de Avaliações</h3>
-                        <p className="text-2xl font-bold text-green-600">{evaluations.filter(e => e.csName === collaborator.name).length}</p>
+                        <h3 className="font-semibold text-green-800">Total de Avaliações no Ano</h3>
+                        <p className="text-2xl font-bold text-green-600">{evaluations.filter(e => e.collaboratorId === collaborator.id).length}</p>
                     </div>
                     <div className="bg-purple-50 p-4 rounded-lg">
                         <h3 className="font-semibold text-purple-800">Bônus Total (Ano)</h3>
@@ -1362,93 +1336,8 @@ function CollaboratorViewModule() {
                 </div>
                 
                 {selectedMonthData && (
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="bg-green-50 p-4 rounded-lg">
-                                <h4 className="font-semibold text-green-800">Bônus Escritório</h4>
-                                <p className="text-xl font-bold text-green-600">R$ {selectedMonthData.officeBonus.toFixed(2)}</p>
-                                <p className="text-sm text-gray-600">{selectedMonthData.officeEvaluations.length} avaliações</p>
-                                <div className={`inline-block px-2 py-1 rounded text-xs font-semibold mt-2 ${selectedMonthData.isPaid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                    {selectedMonthData.isPaid ? 'Pago' : 'Pendente'}
-                                </div>
-                            </div>
-                            <div className="bg-orange-50 p-4 rounded-lg">
-                                <h4 className="font-semibold text-orange-800">Bônus Campo</h4>
-                                <p className="text-xl font-bold text-orange-600">R$ {selectedMonthData.fieldBonus.toFixed(2)}</p>
-                                <p className="text-sm text-gray-600">{selectedMonthData.fieldEvaluations.length} avaliações</p>
-                                <div className={`inline-block px-2 py-1 rounded text-xs font-semibold mt-2 ${selectedMonthData.isPaid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                    {selectedMonthData.isPaid ? 'Pago' : 'Pendente'}
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                            <h4 className="font-semibold text-blue-800">Total do Mês</h4>
-                            <p className="text-2xl font-bold text-blue-600">R$ {selectedMonthData.totalBonus.toFixed(2)}</p>
-                        </div>
-                        
-                        <div>
-                            <h4 className="font-semibold mb-2">Avaliações do Mês</h4>
-                            <div className="space-y-2">
-                                {[...selectedMonthData.officeEvaluations, ...selectedMonthData.fieldEvaluations]
-                                    .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
-                                    .map(evaluation => (
-                                    <div key={evaluation.id} className="p-3 border rounded-lg bg-white">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <p className="font-medium">{evaluation.activityType}</p>
-                                                {/* CORREÇÃO: Usar evaluation.startDate */}
-                                                <p className="text-sm text-gray-600">{new Date(evaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                                                {evaluation.managerName && (
-                                                    <p className="text-xs text-gray-500">Avaliado por: {evaluation.managerName}</p>
-                                                )}
-                                            </div>
-                                            <div className="text-right">
-                                                <div className="flex gap-1">
-                                                    {Object.entries(evaluation.criteria).map(([criterion, value]) => (
-                                                        <span key={criterion} className={`inline-block w-3 h-3 rounded-full ${value === 1 ? 'bg-green-500' : 'bg-red-500'}`} title={`${criterion}: ${value === 1 ? 'Sim' : 'Não'}`}></span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                     <ResultsDashboard collaboratorId={collaborator.id} currentDate={new Date(selectedYear, selectedMonth, 1)} />
                 )}
-            </Card>
-            
-            <Card>
-                <h3 className="text-xl font-bold mb-4">Resumo dos Últimos 12 Meses</h3>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b">
-                                <th className="text-left p-2">Mês</th>
-                                <th className="text-right p-2">Escritório</th>
-                                <th className="text-right p-2">Campo</th>
-                                <th className="text-right p-2">Total</th>
-                                <th className="text-center p-2">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {monthlyData.map(month => (
-                                <tr key={`${month.year}-${month.month}`} className="border-b hover:bg-gray-50">
-                                    <td className="p-2 font-medium">{month.monthName}</td>
-                                    <td className="p-2 text-right">R$ {month.officeBonus.toFixed(2)}</td>
-                                    <td className="p-2 text-right">R$ {month.fieldBonus.toFixed(2)}</td>
-                                    <td className="p-2 text-right font-bold">R$ {month.totalBonus.toFixed(2)}</td>
-                                    <td className="p-2 text-center">
-                                        <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${month.isPaid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                            {month.isPaid ? 'Pago' : 'Pendente'}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
             </Card>
         </div>
     );
@@ -1457,106 +1346,54 @@ function CollaboratorViewModule() {
 
 // --- MÓDULO FINANCEIRO ---
 function FinancialModule() {
-    const { collaborators, evaluations, businessDays, handleCreateNotification } = useContext(AppContext);
+    const { allCollaborators, evaluations, businessDays } = useContext(AppContext);
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [paymentStatus, setPaymentStatus] = useState({});
     
     const monthlyFinancialData = useMemo(() => {
-        const data = collaborators.map(collaborator => {
-            const monthEvaluations = evaluations.filter(e => {
-                // CORREÇÃO: Usar e.startDate em vez de e.date
-                const evalDate = parseDate(e.startDate);
-                return evalDate.getFullYear() === selectedYear && 
-                       evalDate.getMonth() === selectedMonth && 
-                       e.collaboratorId === collaborator.id;
-            });
-            
-            const officeEvals = monthEvaluations.filter(e => e.activityType === 'Escritório');
-            const fieldEvals = monthEvaluations.filter(e => e.activityType === 'Campo');
-            
-            let officeBonus = 0;
-            if (officeEvals.length > 0) {
-                const totalCriteria = officeEvals.reduce((sum, e) => sum + Object.keys(e.criteria).length, 0);
-                const totalPositive = officeEvals.reduce((sum, e) => sum + Object.values(e.criteria).filter(v => v === 1).length, 0);
-                const officePercentage = totalCriteria > 0 ? (totalPositive / totalCriteria) * 100 : 0;
-                
-                if (officePercentage >= 80) {
-                    officeBonus = (officePercentage / 100) * 9.09;
-                }
-            }
-            
-            let fieldBonus = 0;
-            if (fieldEvals.length > 0) {
-                const businessDaysInMonth = businessDays[`${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`]?.days || 22;
-                const fieldDaysWorked = fieldEvals.length;
-                const fieldPercentage = (fieldDaysWorked / businessDaysInMonth) * 100;
-                
-                const hasEquipmentIssue = fieldEvals.some(e => e.criteria['equipamento'] === 0);
-                
-                if (!hasEquipmentIssue) {
-                    fieldBonus = (fieldPercentage / 100) * 9.09;
-                }
-            }
-            
+        const data = allCollaborators.map(collaborator => {
+            const bonusData = calculateMonthlyBonus(collaborator.id, evaluations, businessDays, selectedYear, selectedMonth);
             return {
                 ...collaborator,
-                officeBonus,
-                fieldBonus,
-                totalBonus: officeBonus + fieldBonus,
-                officeEvaluations: officeEvals.length,
-                fieldEvaluations: fieldEvals.length,
+                ...bonusData,
                 isPaid: paymentStatus[`${collaborator.id}-${selectedYear}-${selectedMonth}`] || false
             };
         });
         
         return data.sort((a, b) => b.totalBonus - a.totalBonus);
-    }, [collaborators, evaluations, businessDays, selectedYear, selectedMonth, paymentStatus]);
+    }, [allCollaborators, evaluations, businessDays, selectedYear, selectedMonth, paymentStatus]);
+
+    const annualSummary = useMemo(() => {
+        let totalPaidInYear = 0;
+        allCollaborators.forEach(collaborator => {
+            for (let month = 0; month <= 11; month++) {
+                const { totalBonus } = calculateMonthlyBonus(collaborator.id, evaluations, businessDays, selectedYear, month);
+                totalPaidInYear += totalBonus;
+            }
+        });
+
+        const currentMonth = new Date().getFullYear() === selectedYear ? new Date().getMonth() : 11;
+        const monthsPassed = currentMonth + 1;
+        const projectedAnnual = totalPaidInYear > 0 ? (totalPaidInYear / monthsPassed) * 12 : 0;
+        
+        return { totalPaidInYear, projectedAnnual };
+    }, [allCollaborators, evaluations, businessDays, selectedYear]);
     
     const teamSummary = useMemo(() => {
         const teams = {};
         monthlyFinancialData.forEach(collab => {
             if (!teams[collab.team]) {
-                teams[collab.team] = {
-                    name: collab.team,
-                    collaborators: [],
-                    totalAmount: 0,
-                    winner: null
-                };
+                teams[collab.team] = { name: collab.team, totalAmount: 0 };
             }
-            teams[collab.team].collaborators.push(collab);
             teams[collab.team].totalAmount += collab.totalBonus;
         });
-        
-        Object.values(teams).forEach(team => {
-            if (team.collaborators.length > 0) {
-                team.winner = team.collaborators.reduce((prev, current) => 
-                    prev.totalBonus > current.totalBonus ? prev : current
-                );
-            }
-        });
-        
         return Object.values(teams);
     }, [monthlyFinancialData]);
     
-    const handlePaymentToggle = async (collaboratorId, type) => {
+    const handlePaymentToggle = (collaboratorId) => {
         const key = `${collaboratorId}-${selectedYear}-${selectedMonth}`;
-        const newStatus = !paymentStatus[key];
-        
-        setPaymentStatus(prev => ({
-            ...prev,
-            [key]: newStatus
-        }));
-        
-        const collaborator = collaborators.find(c => c.id === collaboratorId);
-        if (collaborator && newStatus) {
-            await handleCreateNotification(
-                collaboratorId,
-                'Pagamento Processado',
-                `Seu bônus de ${type} foi processado e está disponível.`,
-                'success'
-            );
-        }
+        setPaymentStatus(prev => ({ ...prev, [key]: !prev[key] }));
     };
     
     const totalMonthlyAmount = monthlyFinancialData.reduce((sum, collab) => sum + collab.totalBonus, 0);
@@ -1574,7 +1411,7 @@ function FinancialModule() {
                         >
                             {Array.from({length: 12}, (_, i) => (
                                 <option key={i} value={i}>
-                                    {new Date(2024, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
+                                    {new Date(selectedYear, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
                                 </option>
                             ))}
                         </select>
@@ -1595,31 +1432,23 @@ function FinancialModule() {
                         <p className="text-2xl font-bold text-blue-600">R$ {totalMonthlyAmount.toFixed(2)}</p>
                     </div>
                     <div className="bg-green-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-green-800">Colaboradores</h3>
-                        <p className="text-2xl font-bold text-green-600">{monthlyFinancialData.length}</p>
+                        <h3 className="font-semibold text-green-800">Total Pago no Ano</h3>
+                        <p className="text-2xl font-bold text-green-600">R$ {annualSummary.totalPaidInYear.toFixed(2)}</p>
                     </div>
                     <div className="bg-purple-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-purple-800">Equipes</h3>
-                        <p className="text-2xl font-bold text-purple-600">{teamSummary.length}</p>
+                        <h3 className="font-semibold text-purple-800">Projeção Anual</h3>
+                        <p className="text-2xl font-bold text-purple-600">R$ {annualSummary.projectedAnnual.toFixed(2)}</p>
                     </div>
                 </div>
             </Card>
             
             <Card>
-                <h3 className="text-xl font-bold mb-4">Vencedores por Equipe</h3>
+                <h3 className="text-xl font-bold mb-4">Resumo por Equipe</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {teamSummary.map(team => (
                         <div key={team.name} className="bg-yellow-50 p-4 rounded-lg border-2 border-yellow-200">
                             <h4 className="font-bold text-yellow-800 mb-2">{team.name}</h4>
-                            {team.winner && (
-                                <div>
-                                    <p className="font-semibold text-yellow-700">🏆 {team.winner.name}</p>
-                                    <p className="text-sm text-yellow-600">R$ {team.winner.totalBonus.toFixed(2)}</p>
-                                </div>
-                            )}
-                            <p className="text-xs text-yellow-600 mt-2">
-                                Total da equipe: R$ {team.totalAmount.toFixed(2)}
-                            </p>
+                            <p className="text-lg font-semibold text-yellow-700">R$ {team.totalAmount.toFixed(2)}</p>
                         </div>
                     ))}
                 </div>
@@ -1633,10 +1462,10 @@ function FinancialModule() {
                             <tr className="border-b bg-gray-50">
                                 <th className="text-left p-3">Colaborador</th>
                                 <th className="text-left p-3">Equipe</th>
-                                <th className="text-right p-3">Escritório</th>
-                                <th className="text-right p-3">Campo</th>
+                                <th className="text-right p-3">Bônus Escritório</th>
+                                <th className="text-right p-3">Bônus Campo</th>
                                 <th className="text-right p-3">Total</th>
-                                <th className="text-center p-3">Avaliações</th>
+                                <th className="text-center p-3">Avaliações (E|C)</th>
                                 <th className="text-center p-3">Pagamento</th>
                             </tr>
                         </thead>
@@ -1654,63 +1483,38 @@ function FinancialModule() {
                                     <td className="p-3 text-right font-bold">R$ {collaborator.totalBonus.toFixed(2)}</td>
                                     <td className="p-3 text-center">
                                         <span className="text-xs text-gray-600">
-                                            E: {collaborator.officeEvaluations} | C: {collaborator.fieldEvaluations}
+                                            {collaborator.officeEvals} | {collaborator.fieldEvals}
                                         </span>
                                     </td>
                                     <td className="p-3 text-center">
-                                        <div className="flex flex-col gap-1">
-                                            <Button
-                                                variant={collaborator.isPaid ? "secondary" : "primary"}
-                                                className="text-xs px-2 py-1"
-                                                onClick={() => handlePaymentToggle(collaborator.id, 'total')}
-                                            >
-                                                {collaborator.isPaid ? '✓ Pago' : 'Marcar Pago'}
-                                            </Button>
-                                        </div>
+                                        <Button
+                                            variant={collaborator.isPaid ? "secondary" : "primary"}
+                                            className="text-xs px-2 py-1"
+                                            onClick={() => handlePaymentToggle(collaborator.id)}
+                                        >
+                                            {collaborator.isPaid ? '✓ Pago' : 'Marcar Pago'}
+                                        </Button>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                         <tfoot>
                             <tr className="border-t-2 bg-gray-100 font-bold">
-                                <td colSpan="4" className="p-3 text-right">Total Geral:</td>
-                                <td className="p-3 text-right">R$ {totalMonthlyAmount.toFixed(2)}</td>
+                                <td colSpan="4" className="p-3 text-right">Total Geral do Mês:</td>
+                                <td className="p-3 text-right text-lg">R$ {totalMonthlyAmount.toFixed(2)}</td>
                                 <td colSpan="2" className="p-3"></td>
                             </tr>
                         </tfoot>
                     </table>
                 </div>
             </Card>
-            
-            <Card>
-                <h3 className="text-xl font-bold mb-4">Resumo por Equipe</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {teamSummary.map(team => (
-                        <div key={team.name} className="border rounded-lg p-4">
-                            <h4 className="font-bold mb-2">{team.name}</h4>
-                            <p className="text-lg font-semibold text-blue-600 mb-2">
-                                Total: R$ {team.totalAmount.toFixed(2)}
-                            </p>
-                            <div className="space-y-1">
-                                {team.collaborators.map(collab => (
-                                    <div key={collab.id} className="flex justify-between text-sm">
-                                        <span>{collab.name}</span>
-                                        <span className="font-medium">R$ {collab.totalBonus.toFixed(2)}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </Card>
         </div>
     );
 }
 
-
 // --- MÓDULO DE AUDITORIA ---
 function AuditModule() {
-    const { evaluations, users, handleCreateNotification, allCollaborators } = useContext(AppContext);
+    const { evaluations, users, allCollaborators, handleCreateNotification } = useContext(AppContext);
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [selectedEvaluation, setSelectedEvaluation] = useState(null);
@@ -1719,7 +1523,6 @@ function AuditModule() {
     
     const negativeEvaluations = useMemo(() => {
         return evaluations.filter(evaluation => {
-            // CORREÇÃO: Usar evaluation.startDate em vez de evaluation.date
             const evalDate = parseDate(evaluation.startDate);
             const hasNegativeCriteria = Object.values(evaluation.criteria).some(value => value === 0);
             
@@ -1741,11 +1544,11 @@ function AuditModule() {
         const manager = users.find(u => u.id === selectedEvaluation.managerId || u.name === selectedEvaluation.managerName);
         
         if (manager) {
+            const collaboratorName = allCollaborators.find(c => c.id === selectedEvaluation.collaboratorId)?.name;
             await handleCreateNotification(
                 manager.id,
                 'Questionamento de Auditoria',
-                // CORREÇÃO: Usar selectedEvaluation.startDate
-                `Questionamento sobre avaliação de ${allCollaborators.find(c => c.id === selectedEvaluation.collaboratorId)?.name} em ${new Date(selectedEvaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}: ${questionText}`,
+                `Sobre avaliação de ${collaboratorName} em ${new Date(selectedEvaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}: "${questionText}"`,
                 'warning'
             );
             
@@ -1831,7 +1634,6 @@ function AuditModule() {
                                         <div>
                                             <h4 className="font-bold text-lg">{collaboratorName}</h4>
                                             <p className="text-sm text-gray-600">
-                                                {/* CORREÇÃO: Usar evaluation.startDate */}
                                                 {evaluation.activityType} - {new Date(evaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                                             </p>
                                             <p className="text-sm text-gray-600">
@@ -1908,7 +1710,6 @@ function AuditModule() {
                                 }, {})
                             ).map(([managerName, data]) => {
                                 const totalEvaluations = evaluations.filter(e => {
-                                    // CORREÇÃO: Usar e.startDate
                                     const evalDate = parseDate(e.startDate);
                                     return evalDate.getFullYear() === selectedYear && 
                                            evalDate.getMonth() === selectedMonth &&
@@ -1949,7 +1750,6 @@ function AuditModule() {
                             <div className="mb-4 p-3 bg-gray-50 rounded">
                                 <p className="font-medium">{allCollaborators.find(c => c.id === selectedEvaluation.collaboratorId)?.name}</p>
                                 <p className="text-sm text-gray-600">
-                                    {/* CORREÇÃO: Usar selectedEvaluation.startDate */}
                                     {selectedEvaluation.activityType} - {new Date(selectedEvaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                                 </p>
                                 <p className="text-sm text-gray-600">
