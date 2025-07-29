@@ -34,6 +34,10 @@ const getMonthsForQuarter = (q) => {
 };
 
 const parseDate = (dateString) => {
+    if (!dateString || typeof dateString !== 'string') {
+        // Retorna uma data inválida se a string for nula, indefinida ou não for uma string
+        return new Date(NaN);
+    }
     const [year, month, day] = dateString.split("-").map(Number);
     return new Date(year, month - 1, day);
 };
@@ -113,7 +117,7 @@ const AppProvider = ({ children }) => {
         } else {
             setUserProfile(null);
         }
-    }, [currentUser, userProfile?.id]); // Adicionado userProfile.id como dependência
+    }, [currentUser, userProfile?.id]);
 
     const handleLogin = async (email, password) => {
         try {
@@ -146,7 +150,6 @@ const AppProvider = ({ children }) => {
                 const userRef = doc(db, usersCollectionPath, user.id);
                 await updateDoc(userRef, { name: user.name, team: user.team, role: user.role });
             } else {
-                // Para evitar erros de auth/email-already-in-use, crie o documento primeiro, depois o usuário
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
                 await setDoc(doc(db, usersCollectionPath, userCredential.user.uid), {
                     uid: userCredential.user.uid,
@@ -194,7 +197,6 @@ const AppProvider = ({ children }) => {
     const handleSaveEvaluation = async (evaluation) => {
         try {
             const { id, ...evalData } = evaluation;
-            // Adicionar o nome do gestor que está fazendo a avaliação
             const evaluationWithManager = {
                 ...evalData,
                 managerName: userProfile?.name || 'Desconhecido',
@@ -360,7 +362,6 @@ function LoginPage() {
 function AppContent() {
     const { currentUser, confirmation, setConfirmation } = useContext(AppContext);
     
-    // Definir a view inicial baseada no tipo de usuário
     const getInitialView = () => {
         if (currentUser.role === 'collaborator') return 'collaborator_view';
         return 'dashboard';
@@ -907,7 +908,6 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                     const dayEvaluations = getEvaluationsForDay(dayNumber);
                     const isInRange = isDateInRange(dayNumber);
                     
-                    // Verificar se há alguma avaliação com critério 'Não' (0)
                     const hasNegativeEvaluation = dayEvaluations.some(evalItem => 
                         Object.values(evalItem.criteria).some(criterionValue => criterionValue === 0)
                     );
@@ -973,24 +973,20 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
             const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
             officeDaysWorked += duration;
             
-            // Calcular pontos possíveis e obtidos para a média
             officePossiblePoints += duration * 3; // 3 critérios por dia
             officeObtainedPoints += duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0);
         });
         
-        // Calcular a média de performance do escritório
         const officePerformancePercentage = officePossiblePoints > 0 ? (officeObtainedPoints / officePossiblePoints) * 100 : 0;
         
         let officeBonus = totalBusinessDays > 0 ? (officeDaysWorked / totalBusinessDays) * 200 : 0;
         
-        // Se a média for menor que 80%, zerar o bônus de escritório
         if (officePerformancePercentage < 80) {
             officeBonus = 0;
         }
         
         const fieldEvals = myEvals.filter(e => e.activityType === 'Campo');
         
-        // Verificar se alguma avaliação de campo tem "equipamento" como "Não" (0)
         const hasEquipmentFailure = fieldEvals.some(e => e.criteria.equipamento === 0);
         
         fieldEvals.forEach(e => {
@@ -1001,7 +997,6 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
             }
         });
         
-        // Se alguma avaliação de campo teve problema com equipamento, zerar o bônus de campo
         if (hasEquipmentFailure) {
             fieldBonus = 0;
         }
@@ -1186,10 +1181,8 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
             const isSelected = currentTeams.includes(teamName);
             
             if (isSelected) {
-                // Remove a equipe se já estiver selecionada
                 return { ...f, team: currentTeams.filter(t => t !== teamName) };
             } else {
-                // Adiciona a equipe se não estiver selecionada
                 return { ...f, team: [...currentTeams, teamName] };
             }
         });
@@ -1254,9 +1247,7 @@ function CollaboratorViewModule() {
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     
-    // Encontrar o colaborador correspondente ao usuário logado
     const collaborator = useMemo(() => {
-        // Assumindo que o nome do usuário corresponde ao nome do colaborador
         return { name: currentUser.name, team: currentUser.team || 'N/A' };
     }, [currentUser]);
     
@@ -1264,14 +1255,14 @@ function CollaboratorViewModule() {
         const months = [];
         const currentDate = new Date();
         
-        // Gerar dados dos últimos 12 meses
         for (let i = 11; i >= 0; i--) {
             const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
             const year = date.getFullYear();
             const month = date.getMonth();
             
             const monthEvaluations = evaluations.filter(e => {
-                const evalDate = parseDate(e.date);
+                // CORREÇÃO: Usar e.startDate em vez de e.date
+                const evalDate = parseDate(e.startDate);
                 return evalDate.getFullYear() === year && 
                        evalDate.getMonth() === month && 
                        e.csName === collaborator.name;
@@ -1280,27 +1271,23 @@ function CollaboratorViewModule() {
             const officeEvals = monthEvaluations.filter(e => e.activityType === 'Escritório');
             const fieldEvals = monthEvaluations.filter(e => e.activityType === 'Campo');
             
-            // Calcular bônus de escritório
             let officeBonus = 0;
             if (officeEvals.length > 0) {
                 const totalCriteria = officeEvals.reduce((sum, e) => sum + Object.keys(e.criteria).length, 0);
                 const totalPositive = officeEvals.reduce((sum, e) => sum + Object.values(e.criteria).filter(v => v === 1).length, 0);
                 const officePercentage = totalCriteria > 0 ? (totalPositive / totalCriteria) * 100 : 0;
                 
-                // Zerar se média < 80%
                 if (officePercentage >= 80) {
                     officeBonus = (officePercentage / 100) * 9.09;
                 }
             }
             
-            // Calcular bônus de campo
             let fieldBonus = 0;
             if (fieldEvals.length > 0) {
                 const businessDaysInMonth = businessDays[`${year}-${String(month + 1).padStart(2, '0')}`]?.days || 22;
                 const fieldDaysWorked = fieldEvals.length;
                 const fieldPercentage = (fieldDaysWorked / businessDaysInMonth) * 100;
                 
-                // Verificar se há problema de equipamento
                 const hasEquipmentIssue = fieldEvals.some(e => e.criteria['Equip./Veículo'] === 0);
                 
                 if (!hasEquipmentIssue) {
@@ -1317,7 +1304,7 @@ function CollaboratorViewModule() {
                 officeBonus: officeBonus,
                 fieldBonus: fieldBonus,
                 totalBonus: officeBonus + fieldBonus,
-                isPaid: false // TODO: Implementar lógica de pagamento
+                isPaid: false
             });
         }
         
@@ -1404,13 +1391,14 @@ function CollaboratorViewModule() {
                             <h4 className="font-semibold mb-2">Avaliações do Mês</h4>
                             <div className="space-y-2">
                                 {[...selectedMonthData.officeEvaluations, ...selectedMonthData.fieldEvaluations]
-                                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                                    .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
                                     .map(evaluation => (
                                     <div key={evaluation.id} className="p-3 border rounded-lg bg-white">
                                         <div className="flex justify-between items-start">
                                             <div>
                                                 <p className="font-medium">{evaluation.activityType}</p>
-                                                <p className="text-sm text-gray-600">{new Date(evaluation.date).toLocaleDateString('pt-BR')}</p>
+                                                {/* CORREÇÃO: Usar evaluation.startDate */}
+                                                <p className="text-sm text-gray-600">{new Date(evaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
                                                 {evaluation.managerName && (
                                                     <p className="text-xs text-gray-500">Avaliado por: {evaluation.managerName}</p>
                                                 )}
@@ -1477,37 +1465,34 @@ function FinancialModule() {
     const monthlyFinancialData = useMemo(() => {
         const data = collaborators.map(collaborator => {
             const monthEvaluations = evaluations.filter(e => {
-                const evalDate = parseDate(e.date);
+                // CORREÇÃO: Usar e.startDate em vez de e.date
+                const evalDate = parseDate(e.startDate);
                 return evalDate.getFullYear() === selectedYear && 
                        evalDate.getMonth() === selectedMonth && 
-                       e.csName === collaborator.name;
+                       e.collaboratorId === collaborator.id;
             });
             
             const officeEvals = monthEvaluations.filter(e => e.activityType === 'Escritório');
             const fieldEvals = monthEvaluations.filter(e => e.activityType === 'Campo');
             
-            // Calcular bônus de escritório
             let officeBonus = 0;
             if (officeEvals.length > 0) {
                 const totalCriteria = officeEvals.reduce((sum, e) => sum + Object.keys(e.criteria).length, 0);
                 const totalPositive = officeEvals.reduce((sum, e) => sum + Object.values(e.criteria).filter(v => v === 1).length, 0);
                 const officePercentage = totalCriteria > 0 ? (totalPositive / totalCriteria) * 100 : 0;
                 
-                // Zerar se média < 80%
                 if (officePercentage >= 80) {
                     officeBonus = (officePercentage / 100) * 9.09;
                 }
             }
             
-            // Calcular bônus de campo
             let fieldBonus = 0;
             if (fieldEvals.length > 0) {
                 const businessDaysInMonth = businessDays[`${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`]?.days || 22;
                 const fieldDaysWorked = fieldEvals.length;
                 const fieldPercentage = (fieldDaysWorked / businessDaysInMonth) * 100;
                 
-                // Verificar se há problema de equipamento
-                const hasEquipmentIssue = fieldEvals.some(e => e.criteria['Equip./Veículo'] === 0);
+                const hasEquipmentIssue = fieldEvals.some(e => e.criteria['equipamento'] === 0);
                 
                 if (!hasEquipmentIssue) {
                     fieldBonus = (fieldPercentage / 100) * 9.09;
@@ -1543,7 +1528,6 @@ function FinancialModule() {
             teams[collab.team].totalAmount += collab.totalBonus;
         });
         
-        // Determinar o vencedor de cada equipe
         Object.values(teams).forEach(team => {
             if (team.collaborators.length > 0) {
                 team.winner = team.collaborators.reduce((prev, current) => 
@@ -1564,10 +1548,8 @@ function FinancialModule() {
             [key]: newStatus
         }));
         
-        // Encontrar o colaborador para notificação
         const collaborator = collaborators.find(c => c.id === collaboratorId);
         if (collaborator && newStatus) {
-            // Criar notificação para o colaborador (se ele tiver acesso ao sistema)
             await handleCreateNotification(
                 collaboratorId,
                 'Pagamento Processado',
@@ -1728,7 +1710,7 @@ function FinancialModule() {
 
 // --- MÓDULO DE AUDITORIA ---
 function AuditModule() {
-    const { evaluations, users, handleCreateNotification } = useContext(AppContext);
+    const { evaluations, users, handleCreateNotification, allCollaborators } = useContext(AppContext);
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [selectedEvaluation, setSelectedEvaluation] = useState(null);
@@ -1737,13 +1719,14 @@ function AuditModule() {
     
     const negativeEvaluations = useMemo(() => {
         return evaluations.filter(evaluation => {
-            const evalDate = parseDate(evaluation.date);
+            // CORREÇÃO: Usar evaluation.startDate em vez de evaluation.date
+            const evalDate = parseDate(evaluation.startDate);
             const hasNegativeCriteria = Object.values(evaluation.criteria).some(value => value === 0);
             
             return evalDate.getFullYear() === selectedYear && 
                    evalDate.getMonth() === selectedMonth &&
                    hasNegativeCriteria;
-        }).sort((a, b) => new Date(b.date) - new Date(a.date));
+        }).sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     }, [evaluations, selectedYear, selectedMonth]);
     
     const handleQuestionManager = (evaluation) => {
@@ -1755,14 +1738,14 @@ function AuditModule() {
     const handleSendQuestion = async () => {
         if (!selectedEvaluation || !questionText.trim()) return;
         
-        // Encontrar o gestor que fez a avaliação
         const manager = users.find(u => u.id === selectedEvaluation.managerId || u.name === selectedEvaluation.managerName);
         
         if (manager) {
             await handleCreateNotification(
                 manager.id,
                 'Questionamento de Auditoria',
-                `Questionamento sobre avaliação de ${selectedEvaluation.csName} em ${new Date(selectedEvaluation.date).toLocaleDateString('pt-BR')}: ${questionText}`,
+                // CORREÇÃO: Usar selectedEvaluation.startDate
+                `Questionamento sobre avaliação de ${allCollaborators.find(c => c.id === selectedEvaluation.collaboratorId)?.name} em ${new Date(selectedEvaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}: ${questionText}`,
                 'warning'
             );
             
@@ -1818,7 +1801,7 @@ function AuditModule() {
                     <div className="bg-yellow-50 p-4 rounded-lg">
                         <h3 className="font-semibold text-yellow-800">Colaboradores Afetados</h3>
                         <p className="text-2xl font-bold text-yellow-600">
-                            {new Set(negativeEvaluations.map(e => e.csName)).size}
+                            {new Set(negativeEvaluations.map(e => e.collaboratorId)).size}
                         </p>
                     </div>
                     <div className="bg-blue-50 p-4 rounded-lg">
@@ -1841,13 +1824,15 @@ function AuditModule() {
                     <div className="space-y-4">
                         {negativeEvaluations.map(evaluation => {
                             const criteriaStatus = getCriteriaStatus(evaluation.criteria);
+                            const collaboratorName = allCollaborators.find(c => c.id === evaluation.collaboratorId)?.name || 'Desconhecido';
                             return (
                                 <div key={evaluation.id} className="border rounded-lg p-4 bg-red-50 border-red-200">
                                     <div className="flex justify-between items-start mb-3">
                                         <div>
-                                            <h4 className="font-bold text-lg">{evaluation.csName}</h4>
+                                            <h4 className="font-bold text-lg">{collaboratorName}</h4>
                                             <p className="text-sm text-gray-600">
-                                                {evaluation.activityType} - {new Date(evaluation.date).toLocaleDateString('pt-BR')}
+                                                {/* CORREÇÃO: Usar evaluation.startDate */}
+                                                {evaluation.activityType} - {new Date(evaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                                             </p>
                                             <p className="text-sm text-gray-600">
                                                 Avaliado por: {evaluation.managerName || 'Não informado'}
@@ -1918,13 +1903,13 @@ function AuditModule() {
                                         };
                                     }
                                     acc[manager].problemEvaluations++;
-                                    acc[manager].collaborators.add(evaluation.csName);
+                                    acc[manager].collaborators.add(evaluation.collaboratorId);
                                     return acc;
                                 }, {})
                             ).map(([managerName, data]) => {
-                                // Calcular total de avaliações do gestor no período
                                 const totalEvaluations = evaluations.filter(e => {
-                                    const evalDate = parseDate(e.date);
+                                    // CORREÇÃO: Usar e.startDate
+                                    const evalDate = parseDate(e.startDate);
                                     return evalDate.getFullYear() === selectedYear && 
                                            evalDate.getMonth() === selectedMonth &&
                                            e.managerName === managerName;
@@ -1950,7 +1935,6 @@ function AuditModule() {
                 </div>
             </Card>
             
-            {/* Modal de Questionamento */}
             {showQuestionModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                     <Card className="w-full max-w-md">
@@ -1963,9 +1947,10 @@ function AuditModule() {
                         
                         {selectedEvaluation && (
                             <div className="mb-4 p-3 bg-gray-50 rounded">
-                                <p className="font-medium">{selectedEvaluation.csName}</p>
+                                <p className="font-medium">{allCollaborators.find(c => c.id === selectedEvaluation.collaboratorId)?.name}</p>
                                 <p className="text-sm text-gray-600">
-                                    {selectedEvaluation.activityType} - {new Date(selectedEvaluation.date).toLocaleDateString('pt-BR')}
+                                    {/* CORREÇÃO: Usar selectedEvaluation.startDate */}
+                                    {selectedEvaluation.activityType} - {new Date(selectedEvaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                                 </p>
                                 <p className="text-sm text-gray-600">
                                     Gestor: {selectedEvaluation.managerName}
