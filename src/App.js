@@ -135,10 +135,10 @@ const AppProvider = ({ children }) => {
 
     useEffect(() => {
         if (currentUser) {
-            const userDocQuery = query(collection(db, usersCollectionPath), where("uid", "==", currentUser.uid));
-            const unsubscribeProfile = onSnapshot(userDocQuery, (querySnapshot) => {
-                if (!querySnapshot.empty) {
-                    setUserProfile({id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data()});
+            const userDocRef = doc(db, usersCollectionPath, currentUser.uid);
+            const unsubscribeProfile = onSnapshot(userDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    setUserProfile({id: docSnap.id, ...docSnap.data()});
                 } else {
                     console.error("No profile found for logged-in user. Logging out.");
                     signOut(auth);
@@ -189,25 +189,28 @@ const AppProvider = ({ children }) => {
             return collaborators.filter(c => userTeams.includes(c.team));
         }
         if (userProfile.role === 'collaborator') {
-            return collaborators.filter(c => c.id === userProfile.collaboratorId);
+             return collaborators.filter(c => c.id === userProfile.collaboratorId);
         }
         return [];
     }, [userProfile, collaborators]);
     
     const handleSaveSystemUser = async (user) => {
         try {
+            const userData = {
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                team: user.role === 'manager' ? user.team : null,
+                collaboratorId: user.role === 'collaborator' ? user.collaboratorId : null,
+            };
+
             if (user.id) {
                 const userRef = doc(db, usersCollectionPath, user.id);
-                await updateDoc(userRef, { name: user.name, team: user.team, role: user.role });
+                await updateDoc(userRef, userData);
             } else {
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
-                await setDoc(doc(db, usersCollectionPath, userCredential.user.uid), {
-                    uid: userCredential.user.uid,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                    team: user.role === 'manager' ? user.team : null,
-                });
+                userData.uid = userCredential.user.uid;
+                await setDoc(doc(db, usersCollectionPath, userCredential.user.uid), userData);
             }
         } catch (error) {
             console.error("Erro ao salvar utilizador do sistema:", error);
@@ -460,18 +463,18 @@ function Header() {
     
     const unreadCount = notifications.filter(n => !n.read).length;
     
-    const getTeamDisplay = () => {
-        if (currentUser.role === 'admin') return 'Administrador';
-        if (currentUser.role === 'collaborator') return 'Colaborador';
-        if (currentUser.role === 'gerente') return 'Gerente';
-        if (currentUser.role !== 'manager') return currentUser.role;
-        
-        const teams = Array.isArray(currentUser.team) ? currentUser.team : [currentUser.team];
-        if (teams.length === 1) {
-            return `Gestor - ${teams[0]}`;
-        } else {
-            return `Gestor - ${teams.length} equipes`;
+    const getRoleDisplay = () => {
+        if (!currentUser || !currentUser.role) return '';
+        const role = currentUser.role;
+        if (role === 'admin') return 'Administrador';
+        if (role === 'collaborator') return 'Colaborador';
+        if (role === 'gerente') return 'Gerente';
+        if (role === 'manager') {
+            const teams = Array.isArray(currentUser.team) ? currentUser.team : [currentUser.team].filter(Boolean);
+            if (teams.length === 0) return 'Gestor';
+            return teams.length === 1 ? `Gestor - ${teams[0]}` : `Gestor - ${teams.length} equipes`;
         }
+        return role;
     };
     
     const handleNotificationClick = (notification) => {
@@ -539,7 +542,7 @@ function Header() {
                     </div>
                     <div className="text-right">
                         <p className="font-semibold">{currentUser.name}</p>
-                        <p className="text-sm text-gray-500 capitalize">{getTeamDisplay()}</p>
+                        <p className="text-sm text-gray-500 capitalize">{getRoleDisplay()}</p>
                     </div>
                     <Button onClick={handleLogout} variant="secondary">
                         <LogOut size={16} /> Sair
@@ -738,8 +741,8 @@ function CalendarModule({ onLaunchEvalModal }) {
     const [currentDate, setCurrentDate] = useState(new Date());
 
     useEffect(() => {
-        if (collaborators.length > 0 && !collaborators.find(c => c.id === selectedCollaboratorId)) {
-            setSelectedCollaboratorId(collaborators[0]?.id || null);
+        if (collaborators.length > 0 && !selectedCollaboratorId) {
+            setSelectedCollaboratorId(collaborators[0]?.id);
         }
     }, [collaborators, selectedCollaboratorId]);
 
@@ -783,7 +786,7 @@ function AccessControlModule({ onLaunchAccessModal }) {
         <Card>
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Controle de Acesso ao Sistema</h2>
-                <Button onClick={() => onLaunchAccessModal(null)}><UserPlus size={16} /> Adicionar Gestor</Button>
+                <Button onClick={() => onLaunchAccessModal(null)}><UserPlus size={16} /> Adicionar Usuário</Button>
             </div>
             <div className="space-y-3">
                 {users.map(user => (
@@ -836,7 +839,7 @@ function BusinessDaysModule() {
         const yearData = {};
         for (let i = 0; i < 12; i++) {
             const monthId = `${year}-${String(i + 1).padStart(2, '0')}`;
-            yearData[i] = businessDays[monthId]?.days || 22; // Default to 22
+            yearData[i] = businessDays[monthId]?.days || 22;
         }
         setDays(yearData);
     }, [year, businessDays]);
@@ -1172,12 +1175,14 @@ function CollaboratorModal({ isOpen, onClose, initialData }) {
 }
 
 function AccessControlModal({ isOpen, onClose, initialData }) {
-    const { handleSaveSystemUser } = useContext(AppContext);
+    const { handleSaveSystemUser, allCollaborators, users } = useContext(AppContext);
     const [formData, setFormData] = useState(null);
 
     useEffect(() => {
-        const defaultTeams = initialData?.team ? (Array.isArray(initialData.team) ? initialData.team : [initialData.team]) : ['Projetos'];
-        setFormData(initialData ? { ...initialData, team: defaultTeams } : { name: '', email: '', password: '', role: 'manager', team: ['Projetos'] });
+        setFormData(initialData 
+            ? { ...initialData, team: initialData.team ? (Array.isArray(initialData.team) ? initialData.team : [initialData.team]) : [] } 
+            : { name: '', email: '', password: '', role: 'manager', team: ['Projetos'], collaboratorId: '' }
+        );
     }, [initialData]);
 
     const handleChange = (field, value) => setFormData(f => ({ ...f, [field]: value }));
@@ -1186,19 +1191,25 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
         setFormData(f => {
             const currentTeams = f.team || [];
             const isSelected = currentTeams.includes(teamName);
-            
-            if (isSelected) {
-                return { ...f, team: currentTeams.filter(t => t !== teamName) };
-            } else {
-                return { ...f, team: [...currentTeams, teamName] };
-            }
+            return isSelected 
+                ? { ...f, team: currentTeams.filter(t => t !== teamName) }
+                : { ...f, team: [...currentTeams, teamName] };
         });
     };
     
     const handleSave = () => {
+        if (formData.role === 'collaborator' && !formData.collaboratorId) {
+            alert('Por favor, vincule um colaborador a esta conta de usuário.');
+            return;
+        }
         handleSaveSystemUser(formData);
         onClose();
     };
+    
+    const unlinkedCollaborators = useMemo(() => {
+        const linkedCollaboratorIds = users.map(u => u.collaboratorId).filter(Boolean);
+        return allCollaborators.filter(c => !linkedCollaboratorIds.includes(c.id));
+    }, [allCollaborators, users]);
 
     if (!isOpen || !formData) return null;
 
@@ -1213,9 +1224,27 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                 </div>
                 <div className="space-y-4">
                     <div><label className="block text-sm font-medium">Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
-                    <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
-                    <div><label className="block text-sm font-medium">Senha</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" placeholder="Deixe em branco para não alterar"/></div>
+                    <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData} /></div>
+                    {!initialData && <div><label className="block text-sm font-medium">Senha</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>}
                     <div><label className="block text-sm font-medium">Função</label><select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md"><option value="manager">Gestor</option><option value="gerente">Gerente</option><option value="collaborator">Colaborador</option><option value="admin">Administrador</option></select></div>
+                    
+                    {formData.role === 'collaborator' && (
+                        <div>
+                            <label className="block text-sm font-medium">Vincular ao Colaborador</label>
+                            <select value={formData.collaboratorId} onChange={e => handleChange('collaboratorId', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                                <option value="">Selecione um colaborador</option>
+                                {initialData && initialData.collaboratorId &&
+                                    <option value={initialData.collaboratorId}>
+                                        {allCollaborators.find(c => c.id === initialData.collaboratorId)?.name}
+                                    </option>
+                                }
+                                {unlinkedCollaborators.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     {formData.role === 'manager' && (
                         <div>
                             <label className="block text-sm font-medium mb-2">Equipes (selecione uma ou mais)</label>
@@ -1255,36 +1284,21 @@ function CollaboratorViewModule() {
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     
     const collaborator = useMemo(() => {
+        if (!currentUser || !currentUser.collaboratorId) return null;
         return allCollaborators.find(c => c.id === currentUser.collaboratorId);
     }, [currentUser, allCollaborators]);
     
-    const monthlyData = useMemo(() => {
-        const months = [];
-        const currentEvalDate = new Date();
-        
-        for (let i = 11; i >= 0; i--) {
-            const date = new Date(currentEvalDate.getFullYear(), currentEvalDate.getMonth() - i, 1);
-            const year = date.getFullYear();
-            const month = date.getMonth();
-            
-            const bonusData = collaborator ? calculateMonthlyBonus(collaborator.id, evaluations, businessDays, year, month) : { totalBonus: 0 };
-            
-            months.push({
-                year,
-                month,
-                monthName: date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-                totalBonus: bonusData.totalBonus,
-                isPaid: false 
-            });
+    const yearlyBonus = useMemo(() => {
+        if (!collaborator) return 0;
+        let total = 0;
+        for (let i = 0; i < 12; i++) {
+            total += calculateMonthlyBonus(collaborator.id, evaluations, businessDays, selectedYear, i).totalBonus;
         }
-        
-        return months.reverse();
-    }, [evaluations, collaborator, businessDays]);
-    
-    const selectedMonthData = monthlyData.find(m => m.month === selectedMonth && m.year === selectedYear);
+        return total;
+    }, [collaborator, evaluations, businessDays, selectedYear]);
     
     if (!collaborator) {
-        return <Card><p>Dados do colaborador não encontrados.</p></Card>
+        return <Card><p>Dados do colaborador não encontrados. Verifique se seu usuário está vinculado a um registro de colaborador no Controle de Acesso.</p></Card>
     }
 
     return (
@@ -1297,21 +1311,19 @@ function CollaboratorViewModule() {
                         <p className="text-2xl font-bold text-blue-600">{collaborator.team}</p>
                     </div>
                     <div className="bg-green-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-green-800">Total de Avaliações no Ano</h3>
-                        <p className="text-2xl font-bold text-green-600">{evaluations.filter(e => e.collaboratorId === collaborator.id).length}</p>
+                        <h3 className="font-semibold text-green-800">Total de Avaliações ({selectedYear})</h3>
+                        <p className="text-2xl font-bold text-green-600">{evaluations.filter(e => e.collaboratorId === collaborator.id && parseDate(e.startDate).getFullYear() === selectedYear).length}</p>
                     </div>
                     <div className="bg-purple-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-purple-800">Bônus Total (Ano)</h3>
-                        <p className="text-2xl font-bold text-purple-600">
-                            R$ {monthlyData.reduce((sum, m) => sum + m.totalBonus, 0).toFixed(2)}
-                        </p>
+                        <h3 className="font-semibold text-purple-800">Bônus Total ({selectedYear})</h3>
+                        <p className="text-2xl font-bold text-purple-600">R$ {yearlyBonus.toFixed(2)}</p>
                     </div>
                 </div>
             </Card>
             
             <Card>
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-bold">Histórico Mensal</h3>
+                    <h3 className="text-xl font-bold">Resumo Mensal</h3>
                     <div className="flex gap-2">
                         <select 
                             value={selectedMonth} 
@@ -1320,7 +1332,7 @@ function CollaboratorViewModule() {
                         >
                             {Array.from({length: 12}, (_, i) => (
                                 <option key={i} value={i}>
-                                    {new Date(2024, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
+                                    {new Date(selectedYear, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
                                 </option>
                             ))}
                         </select>
@@ -1335,9 +1347,8 @@ function CollaboratorViewModule() {
                     </div>
                 </div>
                 
-                {selectedMonthData && (
-                     <ResultsDashboard collaboratorId={collaborator.id} currentDate={new Date(selectedYear, selectedMonth, 1)} />
-                )}
+                <ResultsDashboard collaboratorId={collaborator.id} currentDate={new Date(selectedYear, selectedMonth, 1)} />
+
             </Card>
         </div>
     );
