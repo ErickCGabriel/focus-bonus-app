@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, createContext, useContext } from 'react';
-import { Users, BarChart3, Calendar, PlusCircle, X, Briefcase, Mountain, ChevronLeft, ChevronRight, Edit, Trash2, UserPlus, Save, AlertTriangle, FileSpreadsheet, Trophy, LogOut, KeyRound, ShieldCheck, Cog } from 'lucide-react';
+import { Users, BarChart3, Calendar, PlusCircle, X, Briefcase, Mountain, ChevronLeft, ChevronRight, Edit, Trash2, UserPlus, Save, AlertTriangle, FileSpreadsheet, Trophy, LogOut, KeyRound, ShieldCheck, Cog, Bell, DollarSign } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 // Importações do Firebase
@@ -61,12 +61,14 @@ const AppProvider = ({ children }) => {
     const [collaborators, setCollaborators] = useState([]);
     const [evaluations, setEvaluations] = useState([]);
     const [businessDays, setBusinessDays] = useState({});
+    const [notifications, setNotifications] = useState([]);
     const [confirmation, setConfirmation] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     
     const usersCollectionPath = `users`;
     const collaboratorsCollectionPath = `collaborators`;
     const evaluationsCollectionPath = `evaluations`;
     const businessDaysCollectionPath = `business_days`;
+    const notificationsCollectionPath = `notifications`;
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -98,6 +100,7 @@ const AppProvider = ({ children }) => {
                 });
                 setBusinessDays(daysData);
             });
+            const unsubNotifications = onSnapshot(query(collection(db, notificationsCollectionPath), where("recipientId", "==", userProfile?.id || "")), snapshot => setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
             
             return () => {
                 unsubscribeProfile();
@@ -105,11 +108,12 @@ const AppProvider = ({ children }) => {
                 unsubCollabs();
                 unsubEvals();
                 unsubBusinessDays();
+                unsubNotifications();
             };
         } else {
             setUserProfile(null);
         }
-    }, [currentUser]);
+    }, [currentUser, userProfile?.id]); // Adicionado userProfile.id como dependência
 
     const handleLogin = async (email, password) => {
         try {
@@ -124,10 +128,14 @@ const AppProvider = ({ children }) => {
 
     const visibleCollaborators = useMemo(() => {
         if (!userProfile) return [];
-        if (userProfile.role === 'admin') return collaborators;
+        if (userProfile.role === 'admin' || userProfile.role === 'gerente') return collaborators;
         if (userProfile.role === 'manager') {
             const userTeams = Array.isArray(userProfile.team) ? userProfile.team : [userProfile.team];
             return collaborators.filter(c => userTeams.includes(c.team));
+        }
+        if (userProfile.role === 'collaborator') {
+            // Colaborador só vê seus próprios dados
+            return collaborators.filter(c => c.name === userProfile.name);
         }
         return [];
     }, [userProfile, collaborators]);
@@ -138,6 +146,7 @@ const AppProvider = ({ children }) => {
                 const userRef = doc(db, usersCollectionPath, user.id);
                 await updateDoc(userRef, { name: user.name, team: user.team, role: user.role });
             } else {
+                // Para evitar erros de auth/email-already-in-use, crie o documento primeiro, depois o usuário
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
                 await setDoc(doc(db, usersCollectionPath, userCredential.user.uid), {
                     uid: userCredential.user.uid,
@@ -185,10 +194,18 @@ const AppProvider = ({ children }) => {
     const handleSaveEvaluation = async (evaluation) => {
         try {
             const { id, ...evalData } = evaluation;
+            // Adicionar o nome do gestor que está fazendo a avaliação
+            const evaluationWithManager = {
+                ...evalData,
+                managerName: userProfile?.name || 'Desconhecido',
+                managerId: userProfile?.id || null,
+                createdAt: new Date().toISOString()
+            };
+            
             if (id) {
-                await setDoc(doc(db, evaluationsCollectionPath, id), evalData);
+                await setDoc(doc(db, evaluationsCollectionPath, id), evaluationWithManager);
             } else {
-                await addDoc(collection(db, evaluationsCollectionPath), evalData);
+                await addDoc(collection(db, evaluationsCollectionPath), evaluationWithManager);
             }
         } catch (error) {
             console.error("Erro ao salvar avaliação:", error);
@@ -211,6 +228,31 @@ const AppProvider = ({ children }) => {
         });
     };
     
+    const handleCreateNotification = async (recipientId, title, message, type = 'info') => {
+        try {
+            await addDoc(collection(db, notificationsCollectionPath), {
+                recipientId,
+                title,
+                message,
+                type,
+                read: false,
+                createdAt: new Date().toISOString(),
+                senderId: userProfile?.id || null,
+                senderName: userProfile?.name || 'Sistema'
+            });
+        } catch (error) {
+            console.error("Erro ao criar notificação:", error);
+        }
+    };
+    
+    const handleMarkNotificationAsRead = async (notificationId) => {
+        try {
+            await updateDoc(doc(db, notificationsCollectionPath, notificationId), { read: true });
+        } catch (error) {
+            console.error("Erro ao marcar notificação como lida:", error);
+        }
+    };
+
     const handleSaveBusinessDays = async (year, month, days) => {
         const docId = `${year}-${String(month + 1).padStart(2, '0')}`;
         try {
@@ -229,6 +271,7 @@ const AppProvider = ({ children }) => {
         allCollaborators: collaborators, 
         evaluations,
         businessDays,
+        notifications,
         handleLogin, 
         handleLogout,
         handleSaveSystemUser,
@@ -237,6 +280,8 @@ const AppProvider = ({ children }) => {
         handleSaveEvaluation,
         handleDeleteEvaluation,
         handleSaveBusinessDays,
+        handleCreateNotification,
+        handleMarkNotificationAsRead,
         confirmation,
         setConfirmation
     };
@@ -313,7 +358,15 @@ function LoginPage() {
 
 // --- CONTEÚDO PRINCIPAL DA APLICAÇÃO ---
 function AppContent() {
-    const [currentView, setCurrentView] = useState('dashboard');
+    const { currentUser, confirmation, setConfirmation } = useContext(AppContext);
+    
+    // Definir a view inicial baseada no tipo de usuário
+    const getInitialView = () => {
+        if (currentUser.role === 'collaborator') return 'collaborator_view';
+        return 'dashboard';
+    };
+    
+    const [currentView, setCurrentView] = useState(getInitialView());
     const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
     const [editingEvaluation, setEditingEvaluation] = useState(null);
     const [evalModalProps, setEvalModalProps] = useState({ dateRange: { start: null, end: null }, collaboratorId: null });
@@ -321,8 +374,6 @@ function AppContent() {
     const [editingCollaborator, setEditingCollaborator] = useState(null);
     const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
     const [editingAccessUser, setEditingAccessUser] = useState(null);
-    
-    const { currentUser, confirmation, setConfirmation } = useContext(AppContext);
 
     if (!currentUser) {
         return <div className="min-h-screen flex items-center justify-center bg-gray-100"><p>Carregando Perfil...</p></div>;
@@ -333,11 +384,14 @@ function AppContent() {
             <Header />
             <main className="p-4 sm:p-8 max-w-7xl mx-auto">
                 <AppNavigator currentView={currentView} setCurrentView={setCurrentView} />
-                {currentView === 'dashboard' && <DashboardModule />}
-                {currentView === 'calendar' && <CalendarModule onLaunchEvalModal={(evalToEdit, dateRange, collaboratorId) => { setEditingEvaluation(evalToEdit); setEvalModalProps({dateRange, collaboratorId}); setIsEvalModalOpen(true); }} />}
-                {currentUser.role === 'admin' && currentView === 'collaborators' && <CollaboratorManagementModule onLaunchCollaboratorModal={(user) => { setEditingCollaborator(user); setIsCollaboratorModalOpen(true); }} />}
+                {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && currentView === 'dashboard' && <DashboardModule />}
+                {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && currentView === 'calendar' && <CalendarModule onLaunchEvalModal={(evalToEdit, dateRange, collaboratorId) => { setEditingEvaluation(evalToEdit); setEvalModalProps({dateRange, collaboratorId}); setIsEvalModalOpen(true); }} />}
+                {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && currentView === 'financial' && <FinancialModule />}
+                {currentUser.role === 'gerente' && currentView === 'audit' && <AuditModule />}
+                {currentUser.role === 'collaborator' && currentView === 'collaborator_view' && <CollaboratorViewModule />}
+                {(currentUser.role === 'admin' || currentUser.role === 'gerente') && currentView === 'collaborators' && <CollaboratorManagementModule onLaunchCollaboratorModal={(user) => { setEditingCollaborator(user); setIsCollaboratorModalOpen(true); }} />}
                 {currentUser.role === 'admin' && currentView === 'access' && <AccessControlModule onLaunchAccessModal={(user) => { setEditingAccessUser(user); setIsAccessModalOpen(true); }} />}
-                {currentUser.role === 'admin' && currentView === 'business_days' && <BusinessDaysModule />}
+                {(currentUser.role === 'admin' || currentUser.role === 'gerente') && currentView === 'business_days' && <BusinessDaysModule />}
             </main>
             
             {isEvalModalOpen && <EvaluationModal isOpen={isEvalModalOpen} onClose={() => setIsEvalModalOpen(false)} {...evalModalProps} initialData={editingEvaluation} />}
@@ -350,16 +404,28 @@ function AppContent() {
 
 // --- COMPONENTES DE NAVEGAÇÃO E CABEÇALHO ---
 function Header() {
-    const { currentUser, handleLogout } = useContext(AppContext);
+    const { currentUser, handleLogout, notifications, handleMarkNotificationAsRead } = useContext(AppContext);
+    const [showNotifications, setShowNotifications] = useState(false);
+    
+    const unreadCount = notifications.filter(n => !n.read).length;
     
     const getTeamDisplay = () => {
-        if (currentUser.role !== 'manager') return 'Administrador';
+        if (currentUser.role === 'admin') return 'Administrador';
+        if (currentUser.role === 'collaborator') return 'Colaborador';
+        if (currentUser.role === 'gerente') return 'Gerente';
+        if (currentUser.role !== 'manager') return currentUser.role;
         
         const teams = Array.isArray(currentUser.team) ? currentUser.team : [currentUser.team];
         if (teams.length === 1) {
             return `Gestor - ${teams[0]}`;
         } else {
             return `Gestor - ${teams.length} equipes`;
+        }
+    };
+    
+    const handleNotificationClick = (notification) => {
+        if (!notification.read) {
+            handleMarkNotificationAsRead(notification.id);
         }
     };
     
@@ -371,6 +437,55 @@ function Header() {
                     <h1 className="text-2xl font-bold text-gray-900">Focus Bonus App</h1>
                 </div>
                 <div className="flex items-center gap-4">
+                    <div className="relative">
+                        <button 
+                            onClick={() => setShowNotifications(!showNotifications)}
+                            className="relative p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full"
+                        >
+                            <Bell size={20} />
+                            {unreadCount > 0 && (
+                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                                    {unreadCount}
+                                </span>
+                            )}
+                        </button>
+                        
+                        {showNotifications && (
+                            <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border z-50 max-h-96 overflow-y-auto">
+                                <div className="p-3 border-b">
+                                    <h3 className="font-semibold">Notificações</h3>
+                                </div>
+                                {notifications.length === 0 ? (
+                                    <div className="p-4 text-center text-gray-500">
+                                        Nenhuma notificação
+                                    </div>
+                                ) : (
+                                    <div className="divide-y">
+                                        {notifications.map(notification => (
+                                            <div 
+                                                key={notification.id}
+                                                onClick={() => handleNotificationClick(notification)}
+                                                className={`p-3 cursor-pointer hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''}`}
+                                            >
+                                                <div className="flex justify-between items-start">
+                                                    <div className="flex-1">
+                                                        <p className="font-medium text-sm">{notification.title}</p>
+                                                        <p className="text-xs text-gray-600 mt-1">{notification.message}</p>
+                                                        <p className="text-xs text-gray-400 mt-1">
+                                                            {new Date(notification.createdAt).toLocaleDateString('pt-BR')}
+                                                        </p>
+                                                    </div>
+                                                    {!notification.read && (
+                                                        <div className="w-2 h-2 bg-blue-500 rounded-full ml-2 mt-1"></div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                     <div className="text-right">
                         <p className="font-semibold">{currentUser.name}</p>
                         <p className="text-sm text-gray-500 capitalize">{getTeamDisplay()}</p>
@@ -393,14 +508,27 @@ function AppNavigator({ currentView, setCurrentView }) {
     );
     return (
         <div className="mb-8 p-2 bg-white rounded-lg shadow-sm flex items-center flex-wrap gap-2">
-            <NavButton view="dashboard" label="Dashboard" icon={<BarChart3 size={16}/>} />
-            <NavButton view="calendar" label="Lançamentos" icon={<Calendar size={16}/>} />
-            {currentUser.role === 'admin' && (
+            {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && (
+                <>
+                    <NavButton view="dashboard" label="Dashboard" icon={<BarChart3 size={16}/>} />
+                    <NavButton view="calendar" label="Lançamentos" icon={<Calendar size={16}/>} />
+                    <NavButton view="financial" label="Financeiro" icon={<DollarSign size={16}/>} />
+                </>
+            )}
+            {currentUser.role === 'gerente' && (
+                <NavButton view="audit" label="Auditoria" icon={<AlertTriangle size={16}/>} />
+            )}
+            {currentUser.role === 'collaborator' && (
+                <NavButton view="collaborator_view" label="Meus Dados" icon={<Users size={16}/>} />
+            )}
+            {(currentUser.role === 'admin' || currentUser.role === 'gerente') && (
                 <>
                     <NavButton view="collaborators" label="Gerenciar Colaboradores" icon={<Users size={16}/>} />
-                    <NavButton view="access" label="Controle de Acesso" icon={<ShieldCheck size={16}/>} />
                     <NavButton view="business_days" label="Dias Úteis" icon={<Cog size={16}/>} />
                 </>
+            )}
+            {currentUser.role === 'admin' && (
+                <NavButton view="access" label="Controle de Acesso" icon={<ShieldCheck size={16}/>} />
             )}
         </div>
     );
@@ -428,7 +556,7 @@ function DashboardModule() {
                 });
                 let possible = 0, obtained = 0;
                 monthEvals.forEach(e => {
-                    const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
+                    const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
                     possible += duration * 3;
                     obtained += duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0);
                 });
@@ -456,7 +584,7 @@ function DashboardModule() {
                 if (isEligible) {
                     const quarterEvals = evaluations.filter(e => e.collaboratorId === member.id && parseDate(e.startDate).getFullYear() === year && months.includes(parseDate(e.startDate).getMonth()) && e.activityType === 'Escritório');
                     const score = quarterEvals.reduce((acc, e) => {
-                        const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
+                        const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
                         return acc + (duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0));
                     }, 0);
 
@@ -778,9 +906,18 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                     const dayNumber = day + 1;
                     const dayEvaluations = getEvaluationsForDay(dayNumber);
                     const isInRange = isDateInRange(dayNumber);
+                    
+                    // Verificar se há alguma avaliação com critério 'Não' (0)
+                    const hasNegativeEvaluation = dayEvaluations.some(evalItem => 
+                        Object.values(evalItem.criteria).some(criterionValue => criterionValue === 0)
+                    );
+
                     return (
-                        <div key={dayNumber} onClick={() => handleDayClick(dayNumber)} className={`p-2 h-28 border rounded-md cursor-pointer transition-colors ${isInRange ? 'bg-blue-100 border-blue-300' : 'bg-white hover:bg-gray-100'}`}>
+                        <div key={dayNumber} onClick={() => handleDayClick(dayNumber)} className={`p-2 h-28 border rounded-md cursor-pointer transition-colors ${isInRange ? 'bg-blue-100 border-blue-300' : 'bg-white hover:bg-gray-100'} relative`}>
                             <span className="font-bold">{dayNumber}</span>
+                            {hasNegativeEvaluation && (
+                                <span className="absolute top-1 right-1 text-red-500 font-bold text-lg">X</span>
+                            )}
                             <div className="mt-1 space-y-1 text-xs text-left">
                                 {dayEvaluations.map(e => (
                                     <div key={e.id} className="p-1 rounded truncate relative group" style={{backgroundColor: e.activityType === 'Escritório' ? '#dcfce7' : '#ffedd5', color: e.activityType === 'Escritório' ? '#166534' : '#9a3412'}}>
@@ -833,7 +970,7 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
         let officePossiblePoints = 0, officeObtainedPoints = 0;
         
         officeEvals.forEach(e => {
-            const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
+            const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
             officeDaysWorked += duration;
             
             // Calcular pontos possíveis e obtidos para a média
@@ -859,7 +996,7 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
         fieldEvals.forEach(e => {
             const allCriteriaMet = Object.values(e.criteria).every((v)=>v===1);
             if (allCriteriaMet) {
-                const duration = (parseDate(e.endDate) - parseDate(e.startDate)) / 86400000 + 1;
+                const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
                 fieldBonus += duration * 60;
             }
         });
@@ -1013,7 +1150,7 @@ function CollaboratorModal({ isOpen, onClose, initialData }) {
                         {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Equipe / Lotação</label>
+                        <label className="block text-sm font-medium text-gray-700">Equipe</label>
                         <select value={formData.team} onChange={e => handleChange('team', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
                             <option>Projetos</option>
                             <option>Laudos</option>
@@ -1078,7 +1215,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     <div><label className="block text-sm font-medium">Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
                     <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
                     <div><label className="block text-sm font-medium">Senha</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" placeholder="Deixe em branco para não alterar"/></div>
-                    <div><label className="block text-sm font-medium">Função</label><select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md"><option value="manager">Gestor</option><option value="admin">Administrador</option></select></div>
+                    <div><label className="block text-sm font-medium">Função</label><select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md"><option value="manager">Gestor</option><option value="gerente">Gerente</option><option value="collaborator">Colaborador</option><option value="admin">Administrador</option></select></div>
                     {formData.role === 'manager' && (
                         <div>
                             <label className="block text-sm font-medium mb-2">Equipes (selecione uma ou mais)</label>
@@ -1106,6 +1243,761 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     <Button variant="primary" onClick={handleSave} disabled={formData.role === 'manager' && formData.team.length === 0}><Save size={16}/> Salvar</Button>
                 </div>
             </Card>
+        </div>
+    );
+}
+
+
+// --- MÓDULO DE VISUALIZAÇÃO DO COLABORADOR ---
+function CollaboratorViewModule() {
+    const { currentUser, evaluations, businessDays } = useContext(AppContext);
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    
+    // Encontrar o colaborador correspondente ao usuário logado
+    const collaborator = useMemo(() => {
+        // Assumindo que o nome do usuário corresponde ao nome do colaborador
+        return { name: currentUser.name, team: currentUser.team || 'N/A' };
+    }, [currentUser]);
+    
+    const monthlyData = useMemo(() => {
+        const months = [];
+        const currentDate = new Date();
+        
+        // Gerar dados dos últimos 12 meses
+        for (let i = 11; i >= 0; i--) {
+            const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            
+            const monthEvaluations = evaluations.filter(e => {
+                const evalDate = parseDate(e.date);
+                return evalDate.getFullYear() === year && 
+                       evalDate.getMonth() === month && 
+                       e.csName === collaborator.name;
+            });
+            
+            const officeEvals = monthEvaluations.filter(e => e.activityType === 'Escritório');
+            const fieldEvals = monthEvaluations.filter(e => e.activityType === 'Campo');
+            
+            // Calcular bônus de escritório
+            let officeBonus = 0;
+            if (officeEvals.length > 0) {
+                const totalCriteria = officeEvals.reduce((sum, e) => sum + Object.keys(e.criteria).length, 0);
+                const totalPositive = officeEvals.reduce((sum, e) => sum + Object.values(e.criteria).filter(v => v === 1).length, 0);
+                const officePercentage = totalCriteria > 0 ? (totalPositive / totalCriteria) * 100 : 0;
+                
+                // Zerar se média < 80%
+                if (officePercentage >= 80) {
+                    officeBonus = (officePercentage / 100) * 9.09;
+                }
+            }
+            
+            // Calcular bônus de campo
+            let fieldBonus = 0;
+            if (fieldEvals.length > 0) {
+                const businessDaysInMonth = businessDays[`${year}-${String(month + 1).padStart(2, '0')}`]?.days || 22;
+                const fieldDaysWorked = fieldEvals.length;
+                const fieldPercentage = (fieldDaysWorked / businessDaysInMonth) * 100;
+                
+                // Verificar se há problema de equipamento
+                const hasEquipmentIssue = fieldEvals.some(e => e.criteria['Equip./Veículo'] === 0);
+                
+                if (!hasEquipmentIssue) {
+                    fieldBonus = (fieldPercentage / 100) * 9.09;
+                }
+            }
+            
+            months.push({
+                year,
+                month,
+                monthName: date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+                officeEvaluations: officeEvals,
+                fieldEvaluations: fieldEvals,
+                officeBonus: officeBonus,
+                fieldBonus: fieldBonus,
+                totalBonus: officeBonus + fieldBonus,
+                isPaid: false // TODO: Implementar lógica de pagamento
+            });
+        }
+        
+        return months.reverse();
+    }, [evaluations, collaborator.name, businessDays]);
+    
+    const selectedMonthData = monthlyData.find(m => m.month === selectedMonth && m.year === selectedYear);
+    
+    return (
+        <div className="space-y-6">
+            <Card>
+                <h2 className="text-2xl font-bold mb-4">Meus Dados - {collaborator.name}</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                        <h3 className="font-semibold text-blue-800">Equipe</h3>
+                        <p className="text-2xl font-bold text-blue-600">{collaborator.team}</p>
+                    </div>
+                    <div className="bg-green-50 p-4 rounded-lg">
+                        <h3 className="font-semibold text-green-800">Total de Avaliações</h3>
+                        <p className="text-2xl font-bold text-green-600">{evaluations.filter(e => e.csName === collaborator.name).length}</p>
+                    </div>
+                    <div className="bg-purple-50 p-4 rounded-lg">
+                        <h3 className="font-semibold text-purple-800">Bônus Total (Ano)</h3>
+                        <p className="text-2xl font-bold text-purple-600">
+                            R$ {monthlyData.reduce((sum, m) => sum + m.totalBonus, 0).toFixed(2)}
+                        </p>
+                    </div>
+                </div>
+            </Card>
+            
+            <Card>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold">Histórico Mensal</h3>
+                    <div className="flex gap-2">
+                        <select 
+                            value={selectedMonth} 
+                            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                            className="p-2 border rounded-md"
+                        >
+                            {Array.from({length: 12}, (_, i) => (
+                                <option key={i} value={i}>
+                                    {new Date(2024, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
+                                </option>
+                            ))}
+                        </select>
+                        <select 
+                            value={selectedYear} 
+                            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                            className="p-2 border rounded-md"
+                        >
+                            <option value={2024}>2024</option>
+                            <option value={2025}>2025</option>
+                        </select>
+                    </div>
+                </div>
+                
+                {selectedMonthData && (
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-green-50 p-4 rounded-lg">
+                                <h4 className="font-semibold text-green-800">Bônus Escritório</h4>
+                                <p className="text-xl font-bold text-green-600">R$ {selectedMonthData.officeBonus.toFixed(2)}</p>
+                                <p className="text-sm text-gray-600">{selectedMonthData.officeEvaluations.length} avaliações</p>
+                                <div className={`inline-block px-2 py-1 rounded text-xs font-semibold mt-2 ${selectedMonthData.isPaid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                    {selectedMonthData.isPaid ? 'Pago' : 'Pendente'}
+                                </div>
+                            </div>
+                            <div className="bg-orange-50 p-4 rounded-lg">
+                                <h4 className="font-semibold text-orange-800">Bônus Campo</h4>
+                                <p className="text-xl font-bold text-orange-600">R$ {selectedMonthData.fieldBonus.toFixed(2)}</p>
+                                <p className="text-sm text-gray-600">{selectedMonthData.fieldEvaluations.length} avaliações</p>
+                                <div className={`inline-block px-2 py-1 rounded text-xs font-semibold mt-2 ${selectedMonthData.isPaid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                    {selectedMonthData.isPaid ? 'Pago' : 'Pendente'}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                            <h4 className="font-semibold text-blue-800">Total do Mês</h4>
+                            <p className="text-2xl font-bold text-blue-600">R$ {selectedMonthData.totalBonus.toFixed(2)}</p>
+                        </div>
+                        
+                        <div>
+                            <h4 className="font-semibold mb-2">Avaliações do Mês</h4>
+                            <div className="space-y-2">
+                                {[...selectedMonthData.officeEvaluations, ...selectedMonthData.fieldEvaluations]
+                                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                                    .map(evaluation => (
+                                    <div key={evaluation.id} className="p-3 border rounded-lg bg-white">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <p className="font-medium">{evaluation.activityType}</p>
+                                                <p className="text-sm text-gray-600">{new Date(evaluation.date).toLocaleDateString('pt-BR')}</p>
+                                                {evaluation.managerName && (
+                                                    <p className="text-xs text-gray-500">Avaliado por: {evaluation.managerName}</p>
+                                                )}
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="flex gap-1">
+                                                    {Object.entries(evaluation.criteria).map(([criterion, value]) => (
+                                                        <span key={criterion} className={`inline-block w-3 h-3 rounded-full ${value === 1 ? 'bg-green-500' : 'bg-red-500'}`} title={`${criterion}: ${value === 1 ? 'Sim' : 'Não'}`}></span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Card>
+            
+            <Card>
+                <h3 className="text-xl font-bold mb-4">Resumo dos Últimos 12 Meses</h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b">
+                                <th className="text-left p-2">Mês</th>
+                                <th className="text-right p-2">Escritório</th>
+                                <th className="text-right p-2">Campo</th>
+                                <th className="text-right p-2">Total</th>
+                                <th className="text-center p-2">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {monthlyData.map(month => (
+                                <tr key={`${month.year}-${month.month}`} className="border-b hover:bg-gray-50">
+                                    <td className="p-2 font-medium">{month.monthName}</td>
+                                    <td className="p-2 text-right">R$ {month.officeBonus.toFixed(2)}</td>
+                                    <td className="p-2 text-right">R$ {month.fieldBonus.toFixed(2)}</td>
+                                    <td className="p-2 text-right font-bold">R$ {month.totalBonus.toFixed(2)}</td>
+                                    <td className="p-2 text-center">
+                                        <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${month.isPaid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                            {month.isPaid ? 'Pago' : 'Pendente'}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+        </div>
+    );
+}
+
+
+// --- MÓDULO FINANCEIRO ---
+function FinancialModule() {
+    const { collaborators, evaluations, businessDays, handleCreateNotification } = useContext(AppContext);
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [paymentStatus, setPaymentStatus] = useState({});
+    
+    const monthlyFinancialData = useMemo(() => {
+        const data = collaborators.map(collaborator => {
+            const monthEvaluations = evaluations.filter(e => {
+                const evalDate = parseDate(e.date);
+                return evalDate.getFullYear() === selectedYear && 
+                       evalDate.getMonth() === selectedMonth && 
+                       e.csName === collaborator.name;
+            });
+            
+            const officeEvals = monthEvaluations.filter(e => e.activityType === 'Escritório');
+            const fieldEvals = monthEvaluations.filter(e => e.activityType === 'Campo');
+            
+            // Calcular bônus de escritório
+            let officeBonus = 0;
+            if (officeEvals.length > 0) {
+                const totalCriteria = officeEvals.reduce((sum, e) => sum + Object.keys(e.criteria).length, 0);
+                const totalPositive = officeEvals.reduce((sum, e) => sum + Object.values(e.criteria).filter(v => v === 1).length, 0);
+                const officePercentage = totalCriteria > 0 ? (totalPositive / totalCriteria) * 100 : 0;
+                
+                // Zerar se média < 80%
+                if (officePercentage >= 80) {
+                    officeBonus = (officePercentage / 100) * 9.09;
+                }
+            }
+            
+            // Calcular bônus de campo
+            let fieldBonus = 0;
+            if (fieldEvals.length > 0) {
+                const businessDaysInMonth = businessDays[`${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`]?.days || 22;
+                const fieldDaysWorked = fieldEvals.length;
+                const fieldPercentage = (fieldDaysWorked / businessDaysInMonth) * 100;
+                
+                // Verificar se há problema de equipamento
+                const hasEquipmentIssue = fieldEvals.some(e => e.criteria['Equip./Veículo'] === 0);
+                
+                if (!hasEquipmentIssue) {
+                    fieldBonus = (fieldPercentage / 100) * 9.09;
+                }
+            }
+            
+            return {
+                ...collaborator,
+                officeBonus,
+                fieldBonus,
+                totalBonus: officeBonus + fieldBonus,
+                officeEvaluations: officeEvals.length,
+                fieldEvaluations: fieldEvals.length,
+                isPaid: paymentStatus[`${collaborator.id}-${selectedYear}-${selectedMonth}`] || false
+            };
+        });
+        
+        return data.sort((a, b) => b.totalBonus - a.totalBonus);
+    }, [collaborators, evaluations, businessDays, selectedYear, selectedMonth, paymentStatus]);
+    
+    const teamSummary = useMemo(() => {
+        const teams = {};
+        monthlyFinancialData.forEach(collab => {
+            if (!teams[collab.team]) {
+                teams[collab.team] = {
+                    name: collab.team,
+                    collaborators: [],
+                    totalAmount: 0,
+                    winner: null
+                };
+            }
+            teams[collab.team].collaborators.push(collab);
+            teams[collab.team].totalAmount += collab.totalBonus;
+        });
+        
+        // Determinar o vencedor de cada equipe
+        Object.values(teams).forEach(team => {
+            if (team.collaborators.length > 0) {
+                team.winner = team.collaborators.reduce((prev, current) => 
+                    prev.totalBonus > current.totalBonus ? prev : current
+                );
+            }
+        });
+        
+        return Object.values(teams);
+    }, [monthlyFinancialData]);
+    
+    const handlePaymentToggle = async (collaboratorId, type) => {
+        const key = `${collaboratorId}-${selectedYear}-${selectedMonth}`;
+        const newStatus = !paymentStatus[key];
+        
+        setPaymentStatus(prev => ({
+            ...prev,
+            [key]: newStatus
+        }));
+        
+        // Encontrar o colaborador para notificação
+        const collaborator = collaborators.find(c => c.id === collaboratorId);
+        if (collaborator && newStatus) {
+            // Criar notificação para o colaborador (se ele tiver acesso ao sistema)
+            await handleCreateNotification(
+                collaboratorId,
+                'Pagamento Processado',
+                `Seu bônus de ${type} foi processado e está disponível.`,
+                'success'
+            );
+        }
+    };
+    
+    const totalMonthlyAmount = monthlyFinancialData.reduce((sum, collab) => sum + collab.totalBonus, 0);
+    
+    return (
+        <div className="space-y-6">
+            <Card>
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold">Módulo Financeiro</h2>
+                    <div className="flex gap-2">
+                        <select 
+                            value={selectedMonth} 
+                            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                            className="p-2 border rounded-md"
+                        >
+                            {Array.from({length: 12}, (_, i) => (
+                                <option key={i} value={i}>
+                                    {new Date(2024, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
+                                </option>
+                            ))}
+                        </select>
+                        <select 
+                            value={selectedYear} 
+                            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                            className="p-2 border rounded-md"
+                        >
+                            <option value={2024}>2024</option>
+                            <option value={2025}>2025</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                        <h3 className="font-semibold text-blue-800">Total do Mês</h3>
+                        <p className="text-2xl font-bold text-blue-600">R$ {totalMonthlyAmount.toFixed(2)}</p>
+                    </div>
+                    <div className="bg-green-50 p-4 rounded-lg">
+                        <h3 className="font-semibold text-green-800">Colaboradores</h3>
+                        <p className="text-2xl font-bold text-green-600">{monthlyFinancialData.length}</p>
+                    </div>
+                    <div className="bg-purple-50 p-4 rounded-lg">
+                        <h3 className="font-semibold text-purple-800">Equipes</h3>
+                        <p className="text-2xl font-bold text-purple-600">{teamSummary.length}</p>
+                    </div>
+                </div>
+            </Card>
+            
+            <Card>
+                <h3 className="text-xl font-bold mb-4">Vencedores por Equipe</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {teamSummary.map(team => (
+                        <div key={team.name} className="bg-yellow-50 p-4 rounded-lg border-2 border-yellow-200">
+                            <h4 className="font-bold text-yellow-800 mb-2">{team.name}</h4>
+                            {team.winner && (
+                                <div>
+                                    <p className="font-semibold text-yellow-700">🏆 {team.winner.name}</p>
+                                    <p className="text-sm text-yellow-600">R$ {team.winner.totalBonus.toFixed(2)}</p>
+                                </div>
+                            )}
+                            <p className="text-xs text-yellow-600 mt-2">
+                                Total da equipe: R$ {team.totalAmount.toFixed(2)}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            </Card>
+            
+            <Card>
+                <h3 className="text-xl font-bold mb-4">Detalhamento por Colaborador</h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b bg-gray-50">
+                                <th className="text-left p-3">Colaborador</th>
+                                <th className="text-left p-3">Equipe</th>
+                                <th className="text-right p-3">Escritório</th>
+                                <th className="text-right p-3">Campo</th>
+                                <th className="text-right p-3">Total</th>
+                                <th className="text-center p-3">Avaliações</th>
+                                <th className="text-center p-3">Pagamento</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {monthlyFinancialData.map(collaborator => (
+                                <tr key={collaborator.id} className="border-b hover:bg-gray-50">
+                                    <td className="p-3 font-medium">{collaborator.name}</td>
+                                    <td className="p-3">
+                                        <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-semibold">
+                                            {collaborator.team}
+                                        </span>
+                                    </td>
+                                    <td className="p-3 text-right">R$ {collaborator.officeBonus.toFixed(2)}</td>
+                                    <td className="p-3 text-right">R$ {collaborator.fieldBonus.toFixed(2)}</td>
+                                    <td className="p-3 text-right font-bold">R$ {collaborator.totalBonus.toFixed(2)}</td>
+                                    <td className="p-3 text-center">
+                                        <span className="text-xs text-gray-600">
+                                            E: {collaborator.officeEvaluations} | C: {collaborator.fieldEvaluations}
+                                        </span>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                        <div className="flex flex-col gap-1">
+                                            <Button
+                                                variant={collaborator.isPaid ? "secondary" : "primary"}
+                                                className="text-xs px-2 py-1"
+                                                onClick={() => handlePaymentToggle(collaborator.id, 'total')}
+                                            >
+                                                {collaborator.isPaid ? '✓ Pago' : 'Marcar Pago'}
+                                            </Button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot>
+                            <tr className="border-t-2 bg-gray-100 font-bold">
+                                <td colSpan="4" className="p-3 text-right">Total Geral:</td>
+                                <td className="p-3 text-right">R$ {totalMonthlyAmount.toFixed(2)}</td>
+                                <td colSpan="2" className="p-3"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </Card>
+            
+            <Card>
+                <h3 className="text-xl font-bold mb-4">Resumo por Equipe</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {teamSummary.map(team => (
+                        <div key={team.name} className="border rounded-lg p-4">
+                            <h4 className="font-bold mb-2">{team.name}</h4>
+                            <p className="text-lg font-semibold text-blue-600 mb-2">
+                                Total: R$ {team.totalAmount.toFixed(2)}
+                            </p>
+                            <div className="space-y-1">
+                                {team.collaborators.map(collab => (
+                                    <div key={collab.id} className="flex justify-between text-sm">
+                                        <span>{collab.name}</span>
+                                        <span className="font-medium">R$ {collab.totalBonus.toFixed(2)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </Card>
+        </div>
+    );
+}
+
+
+// --- MÓDULO DE AUDITORIA ---
+function AuditModule() {
+    const { evaluations, users, handleCreateNotification } = useContext(AppContext);
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [selectedEvaluation, setSelectedEvaluation] = useState(null);
+    const [questionText, setQuestionText] = useState('');
+    const [showQuestionModal, setShowQuestionModal] = useState(false);
+    
+    const negativeEvaluations = useMemo(() => {
+        return evaluations.filter(evaluation => {
+            const evalDate = parseDate(evaluation.date);
+            const hasNegativeCriteria = Object.values(evaluation.criteria).some(value => value === 0);
+            
+            return evalDate.getFullYear() === selectedYear && 
+                   evalDate.getMonth() === selectedMonth &&
+                   hasNegativeCriteria;
+        }).sort((a, b) => new Date(b.date) - new Date(a.date));
+    }, [evaluations, selectedYear, selectedMonth]);
+    
+    const handleQuestionManager = (evaluation) => {
+        setSelectedEvaluation(evaluation);
+        setQuestionText('');
+        setShowQuestionModal(true);
+    };
+    
+    const handleSendQuestion = async () => {
+        if (!selectedEvaluation || !questionText.trim()) return;
+        
+        // Encontrar o gestor que fez a avaliação
+        const manager = users.find(u => u.id === selectedEvaluation.managerId || u.name === selectedEvaluation.managerName);
+        
+        if (manager) {
+            await handleCreateNotification(
+                manager.id,
+                'Questionamento de Auditoria',
+                `Questionamento sobre avaliação de ${selectedEvaluation.csName} em ${new Date(selectedEvaluation.date).toLocaleDateString('pt-BR')}: ${questionText}`,
+                'warning'
+            );
+            
+            setShowQuestionModal(false);
+            setSelectedEvaluation(null);
+            setQuestionText('');
+            
+            alert('Questionamento enviado com sucesso!');
+        } else {
+            alert('Gestor não encontrado para envio da notificação.');
+        }
+    };
+    
+    const getCriteriaStatus = (criteria) => {
+        const total = Object.keys(criteria).length;
+        const negative = Object.values(criteria).filter(v => v === 0).length;
+        return { total, negative, positive: total - negative };
+    };
+    
+    return (
+        <div className="space-y-6">
+            <Card>
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold">Auditoria de Avaliações</h2>
+                    <div className="flex gap-2">
+                        <select 
+                            value={selectedMonth} 
+                            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                            className="p-2 border rounded-md"
+                        >
+                            {Array.from({length: 12}, (_, i) => (
+                                <option key={i} value={i}>
+                                    {new Date(2024, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
+                                </option>
+                            ))}
+                        </select>
+                        <select 
+                            value={selectedYear} 
+                            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                            className="p-2 border rounded-md"
+                        >
+                            <option value={2024}>2024</option>
+                            <option value={2025}>2025</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="bg-red-50 p-4 rounded-lg">
+                        <h3 className="font-semibold text-red-800">Avaliações com Problemas</h3>
+                        <p className="text-2xl font-bold text-red-600">{negativeEvaluations.length}</p>
+                    </div>
+                    <div className="bg-yellow-50 p-4 rounded-lg">
+                        <h3 className="font-semibold text-yellow-800">Colaboradores Afetados</h3>
+                        <p className="text-2xl font-bold text-yellow-600">
+                            {new Set(negativeEvaluations.map(e => e.csName)).size}
+                        </p>
+                    </div>
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                        <h3 className="font-semibold text-blue-800">Gestores Envolvidos</h3>
+                        <p className="text-2xl font-bold text-blue-600">
+                            {new Set(negativeEvaluations.map(e => e.managerName)).size}
+                        </p>
+                    </div>
+                </div>
+            </Card>
+            
+            <Card>
+                <h3 className="text-xl font-bold mb-4">Avaliações com Critérios Negativos</h3>
+                {negativeEvaluations.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                        <AlertTriangle size={48} className="mx-auto mb-4 text-gray-300" />
+                        <p>Nenhuma avaliação com critérios negativos encontrada neste período.</p>
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        {negativeEvaluations.map(evaluation => {
+                            const criteriaStatus = getCriteriaStatus(evaluation.criteria);
+                            return (
+                                <div key={evaluation.id} className="border rounded-lg p-4 bg-red-50 border-red-200">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div>
+                                            <h4 className="font-bold text-lg">{evaluation.csName}</h4>
+                                            <p className="text-sm text-gray-600">
+                                                {evaluation.activityType} - {new Date(evaluation.date).toLocaleDateString('pt-BR')}
+                                            </p>
+                                            <p className="text-sm text-gray-600">
+                                                Avaliado por: {evaluation.managerName || 'Não informado'}
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="flex gap-2 mb-2">
+                                                <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-semibold">
+                                                    {criteriaStatus.negative} Não
+                                                </span>
+                                                <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">
+                                                    {criteriaStatus.positive} Sim
+                                                </span>
+                                            </div>
+                                            <Button
+                                                variant="primary"
+                                                className="text-xs"
+                                                onClick={() => handleQuestionManager(evaluation)}
+                                            >
+                                                <AlertTriangle size={12} /> Questionar
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                        {Object.entries(evaluation.criteria).map(([criterion, value]) => (
+                                            <div key={criterion} className={`p-2 rounded text-xs font-medium ${value === 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                <span className="block font-semibold">{criterion}</span>
+                                                <span>{value === 1 ? 'Sim' : 'Não'}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    
+                                    {evaluation.observation && (
+                                        <div className="mt-3 p-2 bg-gray-100 rounded">
+                                            <p className="text-sm"><strong>Observação:</strong> {evaluation.observation}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </Card>
+            
+            <Card>
+                <h3 className="text-xl font-bold mb-4">Resumo por Gestor</h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b bg-gray-50">
+                                <th className="text-left p-3">Gestor</th>
+                                <th className="text-center p-3">Avaliações com Problemas</th>
+                                <th className="text-center p-3">Colaboradores Afetados</th>
+                                <th className="text-center p-3">Taxa de Problemas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {Object.entries(
+                                negativeEvaluations.reduce((acc, evaluation) => {
+                                    const manager = evaluation.managerName || 'Não informado';
+                                    if (!acc[manager]) {
+                                        acc[manager] = {
+                                            name: manager,
+                                            problemEvaluations: 0,
+                                            totalEvaluations: 0,
+                                            collaborators: new Set()
+                                        };
+                                    }
+                                    acc[manager].problemEvaluations++;
+                                    acc[manager].collaborators.add(evaluation.csName);
+                                    return acc;
+                                }, {})
+                            ).map(([managerName, data]) => {
+                                // Calcular total de avaliações do gestor no período
+                                const totalEvaluations = evaluations.filter(e => {
+                                    const evalDate = parseDate(e.date);
+                                    return evalDate.getFullYear() === selectedYear && 
+                                           evalDate.getMonth() === selectedMonth &&
+                                           e.managerName === managerName;
+                                }).length;
+                                
+                                const problemRate = totalEvaluations > 0 ? (data.problemEvaluations / totalEvaluations * 100) : 0;
+                                
+                                return (
+                                    <tr key={managerName} className="border-b hover:bg-gray-50">
+                                        <td className="p-3 font-medium">{managerName}</td>
+                                        <td className="p-3 text-center">{data.problemEvaluations}</td>
+                                        <td className="p-3 text-center">{data.collaborators.size}</td>
+                                        <td className="p-3 text-center">
+                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${problemRate > 20 ? 'bg-red-100 text-red-800' : problemRate > 10 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                                                {problemRate.toFixed(1)}%
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+            
+            {/* Modal de Questionamento */}
+            {showQuestionModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <Card className="w-full max-w-md">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold">Questionar Gestor</h3>
+                            <IconButton onClick={() => setShowQuestionModal(false)}>
+                                <X />
+                            </IconButton>
+                        </div>
+                        
+                        {selectedEvaluation && (
+                            <div className="mb-4 p-3 bg-gray-50 rounded">
+                                <p className="font-medium">{selectedEvaluation.csName}</p>
+                                <p className="text-sm text-gray-600">
+                                    {selectedEvaluation.activityType} - {new Date(selectedEvaluation.date).toLocaleDateString('pt-BR')}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                    Gestor: {selectedEvaluation.managerName}
+                                </p>
+                            </div>
+                        )}
+                        
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium mb-2">Questionamento:</label>
+                            <textarea
+                                value={questionText}
+                                onChange={(e) => setQuestionText(e.target.value)}
+                                className="w-full p-3 border rounded-md h-24 resize-none"
+                                placeholder="Digite seu questionamento sobre esta avaliação..."
+                            />
+                        </div>
+                        
+                        <div className="flex justify-end gap-2">
+                            <Button variant="secondary" onClick={() => setShowQuestionModal(false)}>
+                                Cancelar
+                            </Button>
+                            <Button 
+                                variant="primary" 
+                                onClick={handleSendQuestion}
+                                disabled={!questionText.trim()}
+                            >
+                                Enviar Questionamento
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 }
