@@ -183,7 +183,7 @@ const AppProvider = ({ children }) => {
 
     const visibleCollaborators = useMemo(() => {
         if (!userProfile) return [];
-        if (userProfile.role === 'admin' || userProfile.role === 'gerente') return collaborators;
+        if (['admin', 'gerente', 'financeiro'].includes(userProfile.role)) return collaborators;
         if (userProfile.role === 'manager') {
             const userTeams = Array.isArray(userProfile.team) ? userProfile.team : [userProfile.team];
             return collaborators.filter(c => userTeams.includes(c.team));
@@ -218,7 +218,6 @@ const AppProvider = ({ children }) => {
         }
     };
     
-    // NOVO: Lógica para excluir usuário do sistema
     const handleDeleteSystemUser = async (userId, userName) => {
         setConfirmation({
             isOpen: true,
@@ -348,7 +347,7 @@ const AppProvider = ({ children }) => {
         handleLogin, 
         handleLogout,
         handleSaveSystemUser,
-        handleDeleteSystemUser, // NOVO
+        handleDeleteSystemUser,
         handleSaveCollaborator,
         handleDeleteCollaborator,
         handleSaveEvaluation,
@@ -436,6 +435,7 @@ function AppContent() {
     
     const getInitialView = () => {
         if (currentUser.role === 'collaborator') return 'collaborator_view';
+        if (currentUser.role === 'financeiro') return 'financial';
         return 'dashboard';
     };
     
@@ -452,14 +452,18 @@ function AppContent() {
         return <div className="min-h-screen flex items-center justify-center bg-gray-100"><p>Carregando Perfil...</p></div>;
     }
 
+    const isCalendarReadOnly = currentUser.role === 'financeiro';
+    const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
+    const canLaunchAssessments = ['admin', 'gerente', 'manager', 'financeiro'].includes(currentUser.role);
+
     return (
         <div className="bg-gray-50 min-h-screen font-sans text-gray-800">
             <Header />
             <main className="p-4 sm:p-8 max-w-7xl mx-auto">
                 <AppNavigator currentView={currentView} setCurrentView={setCurrentView} />
                 {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && currentView === 'dashboard' && <DashboardModule />}
-                {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && currentView === 'calendar' && <CalendarModule onLaunchEvalModal={(evalToEdit, dateRange, collaboratorId) => { setEditingEvaluation(evalToEdit); setEvalModalProps({dateRange, collaboratorId}); setIsEvalModalOpen(true); }} />}
-                {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && currentView === 'financial' && <FinancialModule />}
+                {canLaunchAssessments && currentView === 'calendar' && <CalendarModule isReadOnly={isCalendarReadOnly} onLaunchEvalModal={(evalToEdit, dateRange, collaboratorId) => { setEditingEvaluation(evalToEdit); setEvalModalProps({dateRange, collaboratorId}); setIsEvalModalOpen(true); }} />}
+                {canSeeFinancial && currentView === 'financial' && <FinancialModule />}
                 {currentUser.role === 'gerente' && currentView === 'audit' && <AuditModule />}
                 {currentUser.role === 'collaborator' && currentView === 'collaborator_view' && <CollaboratorViewModule />}
                 {(currentUser.role === 'admin' || currentUser.role === 'gerente') && currentView === 'collaborators' && <CollaboratorManagementModule onLaunchCollaboratorModal={(user) => { setEditingCollaborator(user); setIsCollaboratorModalOpen(true); }} />}
@@ -488,6 +492,7 @@ function Header() {
         if (role === 'admin') return 'Administrador';
         if (role === 'collaborator') return 'Colaborador';
         if (role === 'gerente') return 'Gerente';
+        if (role === 'financeiro') return 'Financeiro';
         if (role === 'manager') {
             const teams = Array.isArray(currentUser.team) ? currentUser.team : [currentUser.team].filter(Boolean);
             if (teams.length === 0) return 'Gestor';
@@ -574,6 +579,15 @@ function Header() {
 
 function AppNavigator({ currentView, setCurrentView }) {
     const { currentUser } = useContext(AppContext);
+
+    const canSeeDashboard = ['admin', 'manager', 'gerente'].includes(currentUser.role);
+    const canSeeLançamentos = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
+    const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
+    const canSeeAudit = currentUser.role === 'gerente';
+    const canSeeMyData = currentUser.role === 'collaborator';
+    const canSeeAdminTools = ['admin', 'gerente'].includes(currentUser.role);
+    const canSeeAccessControl = currentUser.role === 'admin';
+
     const NavButton = ({ view, label, icon }) => (
         <button onClick={() => setCurrentView(view)} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium ${currentView === view ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
             {icon} {label}
@@ -581,28 +595,18 @@ function AppNavigator({ currentView, setCurrentView }) {
     );
     return (
         <div className="mb-8 p-2 bg-white rounded-lg shadow-sm flex items-center flex-wrap gap-2">
-            {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && (
-                <>
-                    <NavButton view="dashboard" label="Dashboard" icon={<BarChart3 size={16}/>} />
-                    <NavButton view="calendar" label="Lançamentos" icon={<Calendar size={16}/>} />
-                    <NavButton view="financial" label="Financeiro" icon={<DollarSign size={16}/>} />
-                </>
-            )}
-            {currentUser.role === 'gerente' && (
-                <NavButton view="audit" label="Auditoria" icon={<AlertTriangle size={16}/>} />
-            )}
-            {currentUser.role === 'collaborator' && (
-                <NavButton view="collaborator_view" label="Meus Dados" icon={<Users size={16}/>} />
-            )}
-            {(currentUser.role === 'admin' || currentUser.role === 'gerente') && (
+            {canSeeDashboard && <NavButton view="dashboard" label="Dashboard" icon={<BarChart3 size={16}/>} />}
+            {canSeeLançamentos && <NavButton view="calendar" label="Lançamentos" icon={<Calendar size={16}/>} />}
+            {canSeeFinancial && <NavButton view="financial" label="Financeiro" icon={<DollarSign size={16}/>} />}
+            {canSeeAudit && <NavButton view="audit" label="Auditoria" icon={<AlertTriangle size={16}/>} />}
+            {canSeeMyData && <NavButton view="collaborator_view" label="Meus Dados" icon={<Users size={16}/>} />}
+            {canSeeAdminTools && (
                 <>
                     <NavButton view="collaborators" label="Gerenciar Colaboradores" icon={<Users size={16}/>} />
                     <NavButton view="business_days" label="Dias Úteis" icon={<Cog size={16}/>} />
                 </>
             )}
-            {currentUser.role === 'admin' && (
-                <NavButton view="access" label="Controle de Acesso" icon={<ShieldCheck size={16}/>} />
-            )}
+            {canSeeAccessControl && <NavButton view="access" label="Controle de Acesso" icon={<ShieldCheck size={16}/>} />}
         </div>
     );
 }
@@ -754,7 +758,7 @@ function DashboardModule() {
     )
 }
 
-function CalendarModule({ onLaunchEvalModal }) {
+function CalendarModule({ onLaunchEvalModal, isReadOnly = false }) {
     const { collaborators } = useContext(AppContext);
     const [selectedCollaboratorId, setSelectedCollaboratorId] = useState(collaborators[0]?.id || null);
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -776,7 +780,8 @@ function CalendarModule({ onLaunchEvalModal }) {
                     collaboratorId={selectedCollaboratorId} 
                     onLaunchEvalModal={onLaunchEvalModal} 
                     currentDate={currentDate} 
-                    setCurrentDate={setCurrentDate} 
+                    setCurrentDate={setCurrentDate}
+                    isReadOnly={isReadOnly}
                 />
             </div>
             <aside>
@@ -791,14 +796,16 @@ function AccessControlModule({ onLaunchAccessModal }) {
     const { users, handleDeleteSystemUser } = useContext(AppContext);
     
     const getTeamDisplay = (user) => {
-        if (user.role !== 'manager') return user.role;
-        
-        const teams = Array.isArray(user.team) ? user.team : [user.team];
-        if (teams.length === 1) {
-            return `${user.role} - ${teams[0]}`;
-        } else {
-            return `${user.role} - ${teams.join(', ')}`;
+        if (user.role === 'admin') return 'Admin';
+        if (user.role === 'gerente') return 'Gerente';
+        if (user.role === 'financeiro') return 'Financeiro';
+        if (user.role === 'collaborator') return 'Colaborador';
+        if (user.role === 'manager') {
+            const teams = Array.isArray(user.team) ? user.team : [user.team].filter(Boolean);
+            if(teams.length === 0) return 'Gestor';
+            return `Gestor - ${teams.join(', ')}`;
         }
+        return user.role;
     };
     
     return (
@@ -909,7 +916,7 @@ function BusinessDaysModule() {
 
 // --- SUB-COMPONENTES ---
 
-function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurrentDate }) {
+function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurrentDate, isReadOnly = false }) {
     const { evaluations, handleDeleteEvaluation } = useContext(AppContext);
     const [startDate, setStartDate] = useState(null);
     const [endDate, setEndDate] = useState(null);
@@ -967,13 +974,15 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                      <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100"><ChevronRight /></button>
                 </div>
             </div>
-             <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4">
-                 <div>
-                     <p className="font-semibold text-blue-800">Selecione um período para avaliação:</p>
-                     <p className="text-sm text-blue-700">Início: <span className="font-bold">{formatDate(startDate)}</span> | Fim: <span className="font-bold">{formatDate(endDate)}</span></p>
+             {!isReadOnly && (
+                 <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+                     <div>
+                         <p className="font-semibold text-blue-800">Selecione um período para avaliação:</p>
+                         <p className="text-sm text-blue-700">Início: <span className="font-bold">{formatDate(startDate)}</span> | Fim: <span className="font-bold">{formatDate(endDate)}</span></p>
+                     </div>
+                     <Button onClick={() => onLaunchEvalModal(null, {start: startDate, end: endDate}, collaboratorId)} disabled={!startDate || !endDate}><PlusCircle size={16} /> Lançar Avaliação</Button>
                  </div>
-                 <Button onClick={() => onLaunchEvalModal(null, {start: startDate, end: endDate}, collaboratorId)} disabled={!startDate || !endDate}><PlusCircle size={16} /> Lançar Avaliação</Button>
-             </div>
+             )}
             <div className="grid grid-cols-7 gap-1 text-center font-semibold text-gray-600">{weekdays.map(day => <div key={day} className="py-2">{day}</div>)}</div>
             <div className="grid grid-cols-7 gap-1">
                 {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`} />)}
@@ -987,7 +996,7 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                     );
 
                     return (
-                        <div key={dayNumber} onClick={() => handleDayClick(dayNumber)} className={`p-2 h-28 border rounded-md cursor-pointer transition-colors ${isInRange ? 'bg-blue-100 border-blue-300' : 'bg-white hover:bg-gray-100'} relative`}>
+                        <div key={dayNumber} onClick={!isReadOnly ? () => handleDayClick(dayNumber) : undefined} className={`p-2 h-28 border rounded-md transition-colors ${isInRange ? 'bg-blue-100 border-blue-300' : 'bg-white'} ${!isReadOnly ? 'cursor-pointer hover:bg-gray-100' : 'cursor-default'} relative`}>
                             <span className="font-bold">{dayNumber}</span>
                             {hasNegativeEvaluation && (
                                 <span className="absolute top-1 right-1 text-red-500 font-bold text-lg">X</span>
@@ -996,10 +1005,12 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                                 {dayEvaluations.map(e => (
                                     <div key={e.id} className="p-1 rounded truncate relative group" style={{backgroundColor: e.activityType === 'Escritório' ? '#dcfce7' : '#ffedd5', color: e.activityType === 'Escritório' ? '#166534' : '#9a3412'}}>
                                         {e.csName}
-                                        <div className="absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 bg-white/70 backdrop-blur-sm rounded-full px-1">
-                                            <IconButton onClick={(evt) => {evt.stopPropagation(); onLaunchEvalModal(e, null, collaboratorId)}}><Edit size={12}/></IconButton>
-                                            <IconButton onClick={(evt) => {evt.stopPropagation(); handleDeleteEvaluation(e.id)}}><Trash2 size={12}/></IconButton>
-                                        </div>
+                                        {!isReadOnly && (
+                                            <div className="absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 bg-white/70 backdrop-blur-sm rounded-full px-1">
+                                                <IconButton onClick={(evt) => {evt.stopPropagation(); onLaunchEvalModal(e, null, collaboratorId)}}><Edit size={12}/></IconButton>
+                                                <IconButton onClick={(evt) => {evt.stopPropagation(); handleDeleteEvaluation(e.id)}}><Trash2 size={12}/></IconButton>
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -1247,7 +1258,16 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     <div><label className="block text-sm font-medium">Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
                     <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData} /></div>
                     {!initialData && <div><label className="block text-sm font-medium">Senha</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>}
-                    <div><label className="block text-sm font-medium">Função</label><select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md"><option value="manager">Gestor</option><option value="gerente">Gerente</option><option value="collaborator">Colaborador</option><option value="admin">Administrador</option></select></div>
+                    <div>
+                        <label className="block text-sm font-medium">Função</label>
+                        <select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                            <option value="manager">Gestor</option>
+                            <option value="gerente">Gerente</option>
+                            <option value="collaborator">Colaborador</option>
+                            <option value="admin">Administrador</option>
+                            <option value="financeiro">Financeiro</option>
+                        </select>
+                    </div>
                     
                     {formData.role === 'collaborator' && (
                         <div>
@@ -1300,23 +1320,13 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
 
 // --- MÓDULO DE VISUALIZAÇÃO DO COLABORADOR ---
 function CollaboratorViewModule() {
-    const { currentUser, allCollaborators, evaluations, businessDays } = useContext(AppContext);
-    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-    
+    const { currentUser, allCollaborators, evaluations } = useContext(AppContext);
+    const [currentDate, setCurrentDate] = useState(new Date());
+
     const collaborator = useMemo(() => {
         if (!currentUser || !currentUser.collaboratorId) return null;
         return allCollaborators.find(c => c.id === currentUser.collaboratorId);
     }, [currentUser, allCollaborators]);
-    
-    const yearlyBonus = useMemo(() => {
-        if (!collaborator) return 0;
-        let total = 0;
-        for (let i = 0; i < 12; i++) {
-            total += calculateMonthlyBonus(collaborator.id, evaluations, businessDays, selectedYear, i).totalBonus;
-        }
-        return total;
-    }, [collaborator, evaluations, businessDays, selectedYear]);
     
     if (!collaborator) {
         return <Card><p>Dados do colaborador não encontrados. Verifique se seu usuário está vinculado a um registro de colaborador no Controle de Acesso.</p></Card>
@@ -1326,50 +1336,18 @@ function CollaboratorViewModule() {
         <div className="space-y-6">
             <Card>
                 <h2 className="text-2xl font-bold mb-4">Meus Dados - {collaborator.name}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-blue-800">Equipe</h3>
-                        <p className="text-2xl font-bold text-blue-600">{collaborator.team}</p>
-                    </div>
-                    <div className="bg-green-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-green-800">Total de Avaliações ({selectedYear})</h3>
-                        <p className="text-2xl font-bold text-green-600">{evaluations.filter(e => e.collaboratorId === collaborator.id && parseDate(e.startDate).getFullYear() === selectedYear).length}</p>
-                    </div>
-                    <div className="bg-purple-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-purple-800">Bônus Total ({selectedYear})</h3>
-                        <p className="text-2xl font-bold text-purple-600">R$ {yearlyBonus.toFixed(2)}</p>
-                    </div>
-                </div>
+                <ResultsDashboard collaboratorId={collaborator.id} currentDate={currentDate} />
             </Card>
             
             <Card>
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-bold">Resumo Mensal</h3>
-                    <div className="flex gap-2">
-                        <select 
-                            value={selectedMonth} 
-                            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
-                        >
-                            {Array.from({length: 12}, (_, i) => (
-                                <option key={i} value={i}>
-                                    {new Date(selectedYear, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
-                                </option>
-                            ))}
-                        </select>
-                        <select 
-                            value={selectedYear} 
-                            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
-                        >
-                            <option value={2024}>2024</option>
-                            <option value={2025}>2025</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <ResultsDashboard collaboratorId={collaborator.id} currentDate={new Date(selectedYear, selectedMonth, 1)} />
-
+                 <h3 className="text-xl font-bold mb-4">Minhas Avaliações</h3>
+                 <CalendarView 
+                    collaboratorId={collaborator.id} 
+                    currentDate={currentDate}
+                    setCurrentDate={setCurrentDate}
+                    isReadOnly={true} 
+                    onLaunchEvalModal={() => {}}
+                />
             </Card>
         </div>
     );
@@ -1393,7 +1371,7 @@ function FinancialModule() {
             };
         });
         
-        return data.sort((a, b) => b.totalBonus - a.totalBonus);
+        return data.sort((a, b) => a.name.localeCompare(b.name));
     }, [allCollaborators, evaluations, businessDays, selectedYear, selectedMonth, paymentStatus]);
 
     const annualSummary = useMemo(() => {
