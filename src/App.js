@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, createContext, useContext } from 'react';
-import { Users, BarChart3, Calendar, PlusCircle, X, Briefcase, Mountain, ChevronLeft, ChevronRight, Edit, Trash2, UserPlus, Save, AlertTriangle, FileSpreadsheet, Trophy, LogOut, KeyRound, ShieldCheck, Cog, Bell, DollarSign } from 'lucide-react';
+import { Users, BarChart3, Calendar, PlusCircle, X, Briefcase, Mountain, ChevronLeft, ChevronRight, Edit, Trash2, UserPlus, Save, AlertTriangle, FileSpreadsheet, Trophy, LogOut, KeyRound, ShieldCheck, Cog, Bell, DollarSign, CheckCircle2, XCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 // Importações do Firebase
@@ -916,7 +916,7 @@ function BusinessDaysModule() {
 
 // --- SUB-COMPONENTES ---
 
-function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurrentDate, isReadOnly = false }) {
+function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurrentDate, isReadOnly = false, onViewEvaluationDetails }) {
     const { evaluations, handleDeleteEvaluation } = useContext(AppContext);
     const [startDate, setStartDate] = useState(null);
     const [endDate, setEndDate] = useState(null);
@@ -957,7 +957,7 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
     const formatDate = (date) => date ? new Intl.DateTimeFormat('pt-BR').format(date) : '...';
 
     const isDateInRange = (day) => {
-        if (!startDate) return false;
+        if (isReadOnly || !startDate) return false;
         const date = new Date(year, month, day);
         if (endDate) {
             return date >= startDate && date <= endDate;
@@ -1003,7 +1003,12 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                             )}
                             <div className="mt-1 space-y-1 text-xs text-left">
                                 {dayEvaluations.map(e => (
-                                    <div key={e.id} className="p-1 rounded truncate relative group" style={{backgroundColor: e.activityType === 'Escritório' ? '#dcfce7' : '#ffedd5', color: e.activityType === 'Escritório' ? '#166534' : '#9a3412'}}>
+                                    <div 
+                                        key={e.id} 
+                                        className={`p-1 rounded truncate relative group ${onViewEvaluationDetails ? 'cursor-pointer' : ''}`}
+                                        style={{backgroundColor: e.activityType === 'Escritório' ? '#dcfce7' : '#ffedd5', color: e.activityType === 'Escritório' ? '#166534' : '#9a3412'}}
+                                        onClick={onViewEvaluationDetails ? (evt) => { evt.stopPropagation(); onViewEvaluationDetails(e); } : undefined}
+                                    >
                                         {e.csName}
                                         {!isReadOnly && (
                                             <div className="absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 bg-white/70 backdrop-blur-sm rounded-full px-1">
@@ -1145,6 +1150,59 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
                  </div>
              </Card>
          </div>
+    );
+}
+
+// NOVO: Modal de detalhes da avaliação (somente leitura)
+function EvaluationDetailModal({ isOpen, onClose, evaluationData }) {
+    if (!isOpen || !evaluationData) return null;
+
+    const { csName, activityType, startDate, endDate, criteria, observation, managerName } = evaluationData;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <Card className="w-full max-w-lg my-8">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold">Detalhes da Avaliação</h2>
+                    <IconButton onClick={onClose}><X /></IconButton>
+                </div>
+                <div className="space-y-4 text-sm">
+                    <div className="p-3 bg-gray-50 rounded-md">
+                        <p><strong className="font-semibold text-gray-600">CS:</strong> {csName}</p>
+                        <p><strong className="font-semibold text-gray-600">Tipo:</strong> {activityType}</p>
+                        <p><strong className="font-semibold text-gray-600">Período:</strong> {new Date(startDate + 'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(endDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                        <p><strong className="font-semibold text-gray-600">Gestor:</strong> {managerName || 'N/A'}</p>
+                    </div>
+
+                    <div>
+                        <h3 className="font-semibold text-gray-800 mb-2">Critérios Avaliados</h3>
+                        <div className="space-y-2">
+                            {Object.entries(criteria).map(([key, value]) => (
+                                <div key={key} className={`flex items-center justify-between p-2 rounded-md ${value === 1 ? 'bg-green-50' : 'bg-red-50'}`}>
+                                    <span className="capitalize font-medium text-gray-800">{key.replace('equipamento', 'equip./veículo')}</span>
+                                    {value === 1 ? (
+                                        <span className="flex items-center gap-2 font-semibold text-green-700"><CheckCircle2 size={16} /> Sim</span>
+                                    ) : (
+                                        <span className="flex items-center gap-2 font-semibold text-red-700"><XCircle size={16} /> Não</span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {observation && (
+                        <div>
+                            <h3 className="font-semibold text-gray-800 mb-2">Observação</h3>
+                            <p className="p-3 bg-gray-50 rounded-md text-gray-700 whitespace-pre-wrap">{observation}</p>
+                        </div>
+                    )}
+                    
+                    <div className="flex justify-end pt-4">
+                        <Button variant="secondary" onClick={onClose}>Fechar</Button>
+                    </div>
+                </div>
+            </Card>
+        </div>
     );
 }
 
@@ -1322,34 +1380,50 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
 function CollaboratorViewModule() {
     const { currentUser, allCollaborators, evaluations } = useContext(AppContext);
     const [currentDate, setCurrentDate] = useState(new Date());
+    const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+    const [selectedEvaluation, setSelectedEvaluation] = useState(null);
 
     const collaborator = useMemo(() => {
         if (!currentUser || !currentUser.collaboratorId) return null;
         return allCollaborators.find(c => c.id === currentUser.collaboratorId);
     }, [currentUser, allCollaborators]);
+
+    const handleViewDetails = (evaluation) => {
+        setSelectedEvaluation(evaluation);
+        setIsDetailModalOpen(true);
+    };
     
     if (!collaborator) {
         return <Card><p>Dados do colaborador não encontrados. Verifique se seu usuário está vinculado a um registro de colaborador no Controle de Acesso.</p></Card>
     }
 
     return (
-        <div className="space-y-6">
-            <Card>
-                <h2 className="text-2xl font-bold mb-4">Meus Dados - {collaborator.name}</h2>
-                <ResultsDashboard collaboratorId={collaborator.id} currentDate={currentDate} />
-            </Card>
-            
-            <Card>
-                 <h3 className="text-xl font-bold mb-4">Minhas Avaliações</h3>
-                 <CalendarView 
-                    collaboratorId={collaborator.id} 
-                    currentDate={currentDate}
-                    setCurrentDate={setCurrentDate}
-                    isReadOnly={true} 
-                    onLaunchEvalModal={() => {}}
+        <>
+            <div className="space-y-6">
+                <Card>
+                    <h2 className="text-2xl font-bold mb-4">Meus Dados - {collaborator.name}</h2>
+                    <ResultsDashboard collaboratorId={collaborator.id} currentDate={currentDate} />
+                </Card>
+                
+                <Card>
+                    <h3 className="text-xl font-bold mb-4">Minhas Avaliações</h3>
+                    <CalendarView 
+                        collaboratorId={collaborator.id} 
+                        currentDate={currentDate}
+                        setCurrentDate={setCurrentDate}
+                        isReadOnly={true} 
+                        onViewEvaluationDetails={handleViewDetails}
+                    />
+                </Card>
+            </div>
+            {isDetailModalOpen && (
+                <EvaluationDetailModal
+                    isOpen={isDetailModalOpen}
+                    onClose={() => setIsDetailModalOpen(false)}
+                    evaluationData={selectedEvaluation}
                 />
-            </Card>
-        </div>
+            )}
+        </>
     );
 }
 
