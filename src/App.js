@@ -218,6 +218,24 @@ const AppProvider = ({ children }) => {
         }
     };
     
+    // NOVO: Lógica para excluir usuário do sistema
+    const handleDeleteSystemUser = async (userId, userName) => {
+        setConfirmation({
+            isOpen: true,
+            title: `Excluir Usuário do Sistema`,
+            message: `Você tem certeza que deseja excluir o perfil de ${userName}? Esta ação não pode ser desfeita. Lembre-se de excluir a conta também na aba 'Authentication' do Firebase.`,
+            onConfirm: async () => {
+                try {
+                    await deleteDoc(doc(db, usersCollectionPath, userId));
+                } catch (error) {
+                    console.error("Erro ao excluir usuário do sistema:", error);
+                    alert("Ocorreu um erro ao excluir o perfil do usuário.");
+                }
+                setConfirmation({ isOpen: false });
+            }
+        });
+    };
+
     const handleSaveCollaborator = async (collaborator) => {
         try {
             const { id, ...collabData } = collaborator;
@@ -330,6 +348,7 @@ const AppProvider = ({ children }) => {
         handleLogin, 
         handleLogout,
         handleSaveSystemUser,
+        handleDeleteSystemUser, // NOVO
         handleSaveCollaborator,
         handleDeleteCollaborator,
         handleSaveEvaluation,
@@ -769,7 +788,7 @@ function CalendarModule({ onLaunchEvalModal }) {
 }
 
 function AccessControlModule({ onLaunchAccessModal }) {
-    const { users } = useContext(AppContext);
+    const { users, handleDeleteSystemUser } = useContext(AppContext);
     
     const getTeamDisplay = (user) => {
         if (user.role !== 'manager') return user.role;
@@ -798,7 +817,9 @@ function AccessControlModule({ onLaunchAccessModal }) {
                         </div>
                         <div className="flex items-center gap-3">
                             <IconButton onClick={() => onLaunchAccessModal(user)}><Edit size={18} /></IconButton>
-                            <IconButton onClick={() => alert('Delete user logic to be implemented')}><Trash2 size={18} className="text-red-500 hover:text-red-700" /></IconButton>
+                            <IconButton onClick={() => handleDeleteSystemUser(user.id, user.name)}>
+                                <Trash2 size={18} className="text-red-500 hover:text-red-700" />
+                            </IconButton>
                         </div>
                     </div>
                 ))}
@@ -1231,7 +1252,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     {formData.role === 'collaborator' && (
                         <div>
                             <label className="block text-sm font-medium">Vincular ao Colaborador</label>
-                            <select value={formData.collaboratorId} onChange={e => handleChange('collaboratorId', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                            <select value={formData.collaboratorId || ''} onChange={e => handleChange('collaboratorId', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
                                 <option value="">Selecione um colaborador</option>
                                 {initialData && initialData.collaboratorId &&
                                     <option value={initialData.collaboratorId}>
