@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 
 // Importações do Firebase
 import { initializeApp } from "firebase/app";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword } from "firebase/auth";
 import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, deleteDoc, query, where, updateDoc } from "firebase/firestore";
 
 // --- Configuração do Firebase ---
@@ -210,6 +210,7 @@ const AppProvider = ({ children }) => {
             } else {
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
                 userData.uid = userCredential.user.uid;
+                userData.requiresPasswordChange = true; // Forçar troca de senha no primeiro login
                 await setDoc(doc(db, usersCollectionPath, userCredential.user.uid), userData);
             }
         } catch (error) {
@@ -233,6 +234,45 @@ const AppProvider = ({ children }) => {
                 setConfirmation({ isOpen: false });
             }
         });
+    };
+
+    const handleSendPasswordReset = (email) => {
+        setConfirmation({
+            isOpen: true,
+            title: 'Redefinir Senha',
+            message: `Deseja enviar um e-mail de redefinição de senha para ${email}?`,
+            onConfirm: async () => {
+                try {
+                    await sendPasswordResetEmail(auth, email);
+                    alert('E-mail de redefinição de senha enviado com sucesso!');
+                } catch (error) {
+                    console.error("Erro ao enviar e-mail de redefinição:", error);
+                    alert('Falha ao enviar e-mail: ' + error.message);
+                }
+                setConfirmation({ isOpen: false });
+            }
+        });
+    };
+
+    const handleChangePassword = async (newPassword) => {
+        if (!auth.currentUser) return { success: false, message: "Nenhum usuário logado." };
+        try {
+            await updatePassword(auth.currentUser, newPassword);
+            const userDocRef = doc(db, usersCollectionPath, auth.currentUser.uid);
+            await updateDoc(userDocRef, { requiresPasswordChange: false });
+            return { success: true };
+        } catch (error) {
+            console.error("Erro ao alterar senha:", error);
+            return { success: false, message: "Erro ao alterar senha: " + error.message };
+        }
+    };
+
+    const handleDeleteNotification = async (notificationId) => {
+        try {
+            await deleteDoc(doc(db, notificationsCollectionPath, notificationId));
+        } catch (error) {
+            console.error("Erro ao deletar notificação:", error);
+        }
     };
 
     const handleSaveCollaborator = async (collaborator) => {
@@ -355,6 +395,9 @@ const AppProvider = ({ children }) => {
         handleSaveBusinessDays,
         handleCreateNotification,
         handleMarkNotificationAsRead,
+        handleDeleteNotification,
+        handleSendPasswordReset,
+        handleChangePassword,
         confirmation,
         setConfirmation
     };
@@ -452,9 +495,14 @@ function AppContent() {
         return <div className="min-h-screen flex items-center justify-center bg-gray-100"><p>Carregando Perfil...</p></div>;
     }
 
+    // Forçar troca de senha se necessário
+    if (currentUser.requiresPasswordChange) {
+        return <ForcePasswordChangeModal />;
+    }
+
     const isCalendarReadOnly = currentUser.role === 'financeiro';
     const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
-    const canLaunchAssessments = ['admin', 'gerente', 'manager', 'financeiro'].includes(currentUser.role);
+    const canLaunchAssessments = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
 
     return (
         <div className="bg-gray-50 min-h-screen font-sans text-gray-800">
@@ -481,7 +529,7 @@ function AppContent() {
 
 // --- COMPONENTES DE NAVEGAÇÃO E CABEÇALHO ---
 function Header() {
-    const { currentUser, handleLogout, notifications, handleMarkNotificationAsRead } = useContext(AppContext);
+    const { currentUser, handleLogout, notifications, handleMarkNotificationAsRead, handleDeleteNotification } = useContext(AppContext);
     const [showNotifications, setShowNotifications] = useState(false);
     
     const unreadCount = notifications.filter(n => !n.read).length;
@@ -543,10 +591,13 @@ function Header() {
                                             <div 
                                                 key={notification.id}
                                                 onClick={() => handleNotificationClick(notification)}
-                                                className={`p-3 cursor-pointer hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''}`}
+                                                className={`p-3 cursor-pointer group relative hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''}`}
                                             >
+                                                <IconButton onClick={(e) => { e.stopPropagation(); handleDeleteNotification(notification.id); }}>
+                                                    <X size={14} className="absolute top-2 right-2 text-gray-400 hidden group-hover:block hover:text-red-600" />
+                                                </IconButton>
                                                 <div className="flex justify-between items-start">
-                                                    <div className="flex-1">
+                                                    <div className="flex-1 pr-4">
                                                         <p className="font-medium text-sm">{notification.title}</p>
                                                         <p className="text-xs text-gray-600 mt-1">{notification.message}</p>
                                                         <p className="text-xs text-gray-400 mt-1">
@@ -554,7 +605,7 @@ function Header() {
                                                         </p>
                                                     </div>
                                                     {!notification.read && (
-                                                        <div className="w-2 h-2 bg-blue-500 rounded-full ml-2 mt-1"></div>
+                                                        <div className="w-2 h-2 bg-blue-500 rounded-full ml-2 mt-1 flex-shrink-0"></div>
                                                     )}
                                                 </div>
                                             </div>
@@ -1153,7 +1204,6 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
     );
 }
 
-// NOVO: Modal de detalhes da avaliação (somente leitura)
 function EvaluationDetailModal({ isOpen, onClose, evaluationData }) {
     if (!isOpen || !evaluationData) return null;
 
@@ -1265,7 +1315,7 @@ function CollaboratorModal({ isOpen, onClose, initialData }) {
 }
 
 function AccessControlModal({ isOpen, onClose, initialData }) {
-    const { handleSaveSystemUser, allCollaborators, users } = useContext(AppContext);
+    const { handleSaveSystemUser, allCollaborators, users, handleSendPasswordReset } = useContext(AppContext);
     const [formData, setFormData] = useState(null);
 
     useEffect(() => {
@@ -1315,7 +1365,18 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                 <div className="space-y-4">
                     <div><label className="block text-sm font-medium">Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
                     <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData} /></div>
-                    {!initialData && <div><label className="block text-sm font-medium">Senha</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>}
+                    
+                    {initialData ? (
+                        <div>
+                            <label className="block text-sm font-medium">Senha</label>
+                            <Button className="w-full mt-1" variant="secondary" onClick={() => handleSendPasswordReset(formData.email)}>
+                                Enviar E-mail de Redefinição de Senha
+                            </Button>
+                        </div>
+                    ) : (
+                        <div><label className="block text-sm font-medium">Senha Inicial</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
+                    )}
+
                     <div>
                         <label className="block text-sm font-medium">Função</label>
                         <select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
@@ -1375,7 +1436,6 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
     );
 }
 
-
 // --- MÓDULO DE VISUALIZAÇÃO DO COLABORADOR ---
 function CollaboratorViewModule() {
     const { currentUser, allCollaborators, evaluations } = useContext(AppContext);
@@ -1406,8 +1466,8 @@ function CollaboratorViewModule() {
                 </Card>
                 
                 <Card>
-                    <h3 className="text-xl font-bold mb-4">Minhas Avaliações</h3>
-                    <CalendarView 
+                     <h3 className="text-xl font-bold mb-4">Minhas Avaliações</h3>
+                     <CalendarView 
                         collaboratorId={collaborator.id} 
                         currentDate={currentDate}
                         setCurrentDate={setCurrentDate}
@@ -1867,6 +1927,70 @@ function AuditModule() {
                     </Card>
                 </div>
             )}
+        </div>
+    );
+}
+
+// NOVO: Modal para forçar a troca de senha
+function ForcePasswordChangeModal() {
+    const { handleChangePassword } = useContext(AppContext);
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (newPassword.length < 6) {
+            setError("A nova senha deve ter pelo menos 6 caracteres.");
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setError("As senhas não coincidem.");
+            return;
+        }
+        setError('');
+        setIsLoading(true);
+        const result = await handleChangePassword(newPassword);
+        if (!result.success) {
+            setError(result.message);
+            setIsLoading(false);
+        }
+        // Em caso de sucesso, o AppProvider vai recarregar e remover este modal.
+    };
+    
+    return (
+        <div className="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 z-[100]">
+            <Card className="w-full max-w-md">
+                <h2 className="text-2xl font-bold text-center mb-2">Alterar Senha</h2>
+                <p className="text-center text-gray-600 mb-6">Este é seu primeiro acesso. Por segurança, por favor, crie uma nova senha.</p>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Nova Senha</label>
+                        <input 
+                            type="password" 
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className="mt-1 block w-full p-3 border border-gray-300 rounded-md shadow-sm" 
+                            required 
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Confirmar Nova Senha</label>
+                        <input 
+                            type="password" 
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className="mt-1 block w-full p-3 border border-gray-300 rounded-md shadow-sm" 
+                            required 
+                        />
+                    </div>
+                     {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+                    <Button type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? "Salvando..." : "Salvar Nova Senha"}
+                    </Button>
+                </form>
+            </Card>
         </div>
     );
 }
