@@ -55,11 +55,13 @@ const IconButton = ({ children, onClick }) => <button onClick={onClick} classNam
 
 // --- LÓGICA DE CÁLCULO DE BÔNUS (HELPER) ---
 const calculateMonthlyBonus = (collaboratorId, allEvaluations, businessDays, year, month) => {
+    // MODIFICADO: Filtra apenas as avaliações finalizadas para o cálculo
     const myEvals = allEvaluations.filter(e => {
         const evalDate = parseDate(e.startDate);
         return e.collaboratorId === collaboratorId &&
                evalDate.getFullYear() === year &&
-               evalDate.getMonth() === month;
+               evalDate.getMonth() === month &&
+               e.isFinalized === true; // <-- SÓ CALCULA SE FINALIZADA
     });
 
     let officeDaysWorked = 0;
@@ -100,7 +102,44 @@ const calculateMonthlyBonus = (collaboratorId, allEvaluations, businessDays, yea
         fieldBonus = 0;
     }
 
-    return { officeBonus, fieldBonus, totalBonus: officeBonus + fieldBonus, officeDaysWorked, totalBusinessDays, officeEvals: officeEvals.length, fieldEvals: fieldEvals.length };
+    // NOVO: Aplica o limite de R$ 200 para o bônus de campo
+    const finalFieldBonus = Math.min(fieldBonus, 200);
+
+    return { officeBonus, fieldBonus: finalFieldBonus, totalBonus: officeBonus + finalFieldBonus, officeDaysWorked, totalBusinessDays, officeEvals: officeEvals.length, fieldEvals: fieldEvals.length };
+};
+
+// NOVO: Função para chamar a Cloud Function de atualização de senha (exemplo)
+const updateUserPasswordOnServer = async (uid, newPassword) => {
+    // Esta é uma chamada para uma função de back-end (Firebase Cloud Function)
+    // Você precisará implementar a função 'updateUserPassword' no seu Firebase.
+    // Exemplo da Cloud Function (adicione ao arquivo index.js no seu projeto Firebase Functions):
+    /*
+    const functions = require("firebase-functions");
+    const admin = require("firebase-admin");
+    admin.initializeApp();
+
+    exports.updateUserPassword = functions.https.onCall(async (data, context) => {
+      // Verifique se o chamador é um administrador
+      if (context.auth.token.role !== 'admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Apenas administradores podem alterar senhas.');
+      }
+      const { uid, password } = data;
+      if (!uid || !password || password.length < 6) {
+        throw new functions.https.HttpsError('invalid-argument', 'UID e uma senha de no mínimo 6 caracteres são necessários.');
+      }
+      try {
+        await admin.auth().updateUser(uid, { password: password });
+        return { success: true, message: 'Senha atualizada com sucesso.' };
+      } catch (error) {
+        console.error("Erro ao atualizar senha:", error);
+        throw new functions.https.HttpsError('internal', error.message);
+      }
+    });
+    */
+    console.warn("A funcionalidade de alterar senha requer uma Cloud Function no Firebase chamada 'updateUserPassword'.");
+    // Simulação da chamada, substitua pela chamada real à sua Cloud Function quando ela for implementada.
+    alert(`SIMULAÇÃO: A senha do usuário com UID ${uid} seria alterada para "${newPassword}". Implemente a Cloud Function para que isso funcione de verdade.`);
+    return { success: true };
 };
 
 
@@ -194,6 +233,7 @@ const AppProvider = ({ children }) => {
         return [];
     }, [userProfile, collaborators]);
     
+    // MODIFICADO: Para lidar com a atualização de senha de um usuário existente
     const handleSaveSystemUser = async (user) => {
         try {
             const userData = {
@@ -204,10 +244,16 @@ const AppProvider = ({ children }) => {
                 collaboratorId: user.role === 'collaborator' ? user.collaboratorId : null,
             };
 
-            if (user.id) {
+            if (user.id) { // Editando um usuário existente
                 const userRef = doc(db, usersCollectionPath, user.id);
                 await updateDoc(userRef, userData);
-            } else {
+                
+                // NOVO: Se uma nova senha foi fornecida para um usuário existente
+                if (user.password) {
+                    // Esta chamada requer uma Cloud Function com privilégios de admin
+                    await updateUserPasswordOnServer(user.id, user.password);
+                }
+            } else { // Criando um novo usuário
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
                 userData.uid = userCredential.user.uid;
                 userData.requiresPasswordChange = true; // Forçar troca de senha no primeiro login
@@ -509,20 +555,20 @@ function AppContent() {
             <Header />
             <main className="p-4 sm:p-8 max-w-7xl mx-auto">
                 <AppNavigator currentView={currentView} setCurrentView={setCurrentView} />
-                {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && currentView === 'dashboard' && <DashboardModule />}
-                {canLaunchAssessments && currentView === 'calendar' && <CalendarModule isReadOnly={isCalendarReadOnly} onLaunchEvalModal={(evalToEdit, dateRange, collaboratorId) => { setEditingEvaluation(evalToEdit); setEvalModalProps({dateRange, collaboratorId}); setIsEvalModalOpen(true); }} />}
-                {canSeeFinancial && currentView === 'financial' && <FinancialModule />}
-                {currentUser.role === 'gerente' && currentView === 'audit' && <AuditModule />}
-                {currentUser.role === 'collaborator' && currentView === 'collaborator_view' && <CollaboratorViewModule />}
-                {(currentUser.role === 'admin' || currentUser.role === 'gerente') && currentView === 'collaborators' && <CollaboratorManagementModule onLaunchCollaboratorModal={(user) => { setEditingCollaborator(user); setIsCollaboratorModalOpen(true); }} />}
-                {currentUser.role === 'admin' && currentView === 'access' && <AccessControlModule onLaunchAccessModal={(user) => { setEditingAccessUser(user); setIsAccessModalOpen(true); }} />}
-                {(currentUser.role === 'admin' || currentUser.role === 'gerente') && currentView === 'business_days' && <BusinessDaysModule />}
+                {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && currentView === 'dashboard' && <DashboardModule />} 
+                {canLaunchAssessments && currentView === 'calendar' && <CalendarModule isReadOnly={isCalendarReadOnly} onLaunchEvalModal={(evalToEdit, dateRange, collaboratorId) => { setEditingEvaluation(evalToEdit); setEvalModalProps({dateRange, collaboratorId}); setIsEvalModalOpen(true); }} />} 
+                {canSeeFinancial && currentView === 'financial' && <FinancialModule />} 
+                {currentUser.role === 'gerente' && currentView === 'audit' && <AuditModule />} 
+                {currentUser.role === 'collaborator' && currentView === 'collaborator_view' && <CollaboratorViewModule />} 
+                {(currentUser.role === 'admin' || currentUser.role === 'gerente') && currentView === 'collaborators' && <CollaboratorManagementModule onLaunchCollaboratorModal={(user) => { setEditingCollaborator(user); setIsCollaboratorModalOpen(true); }} />} 
+                {currentUser.role === 'admin' && currentView === 'access' && <AccessControlModule onLaunchAccessModal={(user) => { setEditingAccessUser(user); setIsAccessModalOpen(true); }} />} 
+                {(currentUser.role === 'admin' || currentUser.role === 'gerente') && currentView === 'business_days' && <BusinessDaysModule />} 
             </main>
             
-            {isEvalModalOpen && <EvaluationModal isOpen={isEvalModalOpen} onClose={() => setIsEvalModalOpen(false)} {...evalModalProps} initialData={editingEvaluation} />}
-            {isCollaboratorModalOpen && <CollaboratorModal isOpen={isCollaboratorModalOpen} onClose={() => setIsCollaboratorModalOpen(false)} initialData={editingCollaborator} />}
-            {isAccessModalOpen && <AccessControlModal isOpen={isAccessModalOpen} onClose={() => setIsAccessModalOpen(false)} initialData={editingAccessUser} />}
-            {confirmation.isOpen && <ConfirmationModal isOpen={confirmation.isOpen} onClose={() => setConfirmation({ isOpen: false })} onConfirm={confirmation.onConfirm} title={confirmation.title} message={confirmation.message} />}
+            {isEvalModalOpen && <EvaluationModal isOpen={isEvalModalOpen} onClose={() => setIsEvalModalOpen(false)} {...evalModalProps} initialData={editingEvaluation} />} 
+            {isCollaboratorModalOpen && <CollaboratorModal isOpen={isCollaboratorModalOpen} onClose={() => setIsCollaboratorModalOpen(false)} initialData={editingCollaborator} />} 
+            {isAccessModalOpen && <AccessControlModal isOpen={isAccessModalOpen} onClose={() => setIsAccessModalOpen(false)} initialData={editingAccessUser} />} 
+            {confirmation.isOpen && <ConfirmationModal isOpen={confirmation.isOpen} onClose={() => setConfirmation({ isOpen: false })} onConfirm={confirmation.onConfirm} title={confirmation.title} message={confirmation.message} />} 
         </div>
     );
 }
@@ -589,7 +635,7 @@ function Header() {
                                     <div className="divide-y">
                                         {notifications.map(notification => (
                                             <div 
-                                                key={notification.id}
+                                                key={notification.id} 
                                                 onClick={() => handleNotificationClick(notification)}
                                                 className={`p-3 cursor-pointer group relative hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''}`}
                                             >
@@ -605,7 +651,7 @@ function Header() {
                                                         </p>
                                                     </div>
                                                     {!notification.read && (
-                                                        <div className="w-2 h-2 bg-blue-500 rounded-full ml-2 mt-1 flex-shrink-0"></div>
+                                                        <div className=""></div>
                                                     )}
                                                 </div>
                                             </div>
@@ -615,13 +661,11 @@ function Header() {
                             </div>
                         )}
                     </div>
-                    <div className="text-right">
-                        <p className="font-semibold">{currentUser.name}</p>
-                        <p className="text-sm text-gray-500 capitalize">{getRoleDisplay()}</p>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">Olá, {currentUser?.name || 'Usuário'}</span>
+                        <span className="text-xs text-gray-500">({getRoleDisplay()})</span>
                     </div>
-                    <Button onClick={handleLogout} variant="secondary">
-                        <LogOut size={16} /> Sair
-                    </Button>
+                    <Button onClick={handleLogout} variant="secondary"><LogOut size={16} /> Sair</Button>
                 </div>
             </div>
         </header>
@@ -630,342 +674,212 @@ function Header() {
 
 function AppNavigator({ currentView, setCurrentView }) {
     const { currentUser } = useContext(AppContext);
+    const navItems = useMemo(() => {
+        const items = [];
+        if (['admin', 'manager', 'gerente'].includes(currentUser.role)) {
+            items.push({ id: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={18} /> });
+        }
+        if (['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role)) {
+            items.push({ id: 'calendar', label: 'Calendário', icon: <Calendar size={18} /> });
+        }
+        if (['admin', 'gerente', 'financeiro'].includes(currentUser.role)) {
+            items.push({ id: 'financial', label: 'Financeiro', icon: <DollarSign size={18} /> });
+        }
+        if (currentUser.role === 'gerente') {
+            items.push({ id: 'audit', label: 'Auditoria', icon: <ShieldCheck size={18} /> });
+        }
+        if (currentUser.role === 'collaborator') {
+            items.push({ id: 'collaborator_view', label: 'Minhas Avaliações', icon: <UserPlus size={18} /> });
+        }
+        if (['admin', 'gerente'].includes(currentUser.role)) {
+            items.push({ id: 'collaborators', label: 'Colaboradores', icon: <Users size={18} /> });
+            items.push({ id: 'business_days', label: 'Dias Úteis', icon: <Cog size={18} /> });
+        }
+        if (currentUser.role === 'admin') {
+            items.push({ id: 'access', label: 'Controle de Acesso', icon: <KeyRound size={18} /> });
+        }
+        return items;
+    }, [currentUser.role]);
 
-    const canSeeDashboard = ['admin', 'manager', 'gerente'].includes(currentUser.role);
-    const canSeeLançamentos = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
-    const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
-    const canSeeAudit = currentUser.role === 'gerente';
-    const canSeeMyData = currentUser.role === 'collaborator';
-    const canSeeAdminTools = ['admin', 'gerente'].includes(currentUser.role);
-    const canSeeAccessControl = currentUser.role === 'admin';
-
-    const NavButton = ({ view, label, icon }) => (
-        <button onClick={() => setCurrentView(view)} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium ${currentView === view ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
-            {icon} {label}
-        </button>
-    );
     return (
-        <div className="mb-8 p-2 bg-white rounded-lg shadow-sm flex items-center flex-wrap gap-2">
-            {canSeeDashboard && <NavButton view="dashboard" label="Dashboard" icon={<BarChart3 size={16}/>} />}
-            {canSeeLançamentos && <NavButton view="calendar" label="Lançamentos" icon={<Calendar size={16}/>} />}
-            {canSeeFinancial && <NavButton view="financial" label="Financeiro" icon={<DollarSign size={16}/>} />}
-            {canSeeAudit && <NavButton view="audit" label="Auditoria" icon={<AlertTriangle size={16}/>} />}
-            {canSeeMyData && <NavButton view="collaborator_view" label="Meus Dados" icon={<Users size={16}/>} />}
-            {canSeeAdminTools && (
-                <>
-                    <NavButton view="collaborators" label="Gerenciar Colaboradores" icon={<Users size={16}/>} />
-                    <NavButton view="business_days" label="Dias Úteis" icon={<Cog size={16}/>} />
-                </>
-            )}
-            {canSeeAccessControl && <NavButton view="access" label="Controle de Acesso" icon={<ShieldCheck size={16}/>} />}
-        </div>
+        <nav className="bg-white p-4 rounded-lg shadow-md mb-8">
+            <ul className="flex flex-wrap justify-center sm:justify-start gap-4">
+                {navItems.map(item => (
+                    <li key={item.id}>
+                        <button
+                            onClick={() => setCurrentView(item.id)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${currentView === item.id ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}
+                        >
+                            {item.icon}
+                            <span className="text-sm font-medium">{item.label}</span>
+                        </button>
+                    </li>
+                ))}
+            </ul>
+        </nav>
     );
 }
 
-// --- MÓDULOS DE PÁGINA ---
-
+// --- MÓDULOS DE VISUALIZAÇÃO --- 
 function DashboardModule() {
-    const { collaborators, evaluations } = useContext(AppContext);
-    const [year, setYear] = useState(new Date().getFullYear());
-    const [quarter, setQuarter] = useState(getQuarter(new Date()));
+    const { collaborators, evaluations, businessDays } = useContext(AppContext);
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [selectedQuarter, setSelectedQuarter] = useState(getQuarter(new Date()));
 
-    const performanceData = useMemo(() => {
-        if (!collaborators || collaborators.length === 0) return {};
+    const years = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        return Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
+    }, []);
+
+    const quarterlyData = useMemo(() => {
         const data = {};
-        collaborators.filter(c => c.team !== 'Campo').forEach(c => {
-            data[c.name] = {};
-            for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
-                const monthEvals = evaluations.filter(e => {
-                    const evalDate = parseDate(e.startDate);
-                    return e.collaboratorId === c.id && 
-                           evalDate.getFullYear() === year && 
-                           evalDate.getMonth() === monthIndex && 
-                           e.activityType === 'Escritório';
-                });
-                let possible = 0, obtained = 0;
-                monthEvals.forEach(e => {
-                    const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
-                    possible += duration * 3;
-                    obtained += duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0);
-                });
-                data[c.name][monthIndex] = possible > 0 ? (obtained / possible) * 100 : null;
+        const monthsInQuarter = getMonthsForQuarter(selectedQuarter);
+
+        collaborators.forEach(collab => {
+            let totalBonus = 0;
+            monthsInQuarter.forEach(month => {
+                const { totalBonus: monthBonus } = calculateMonthlyBonus(collab.id, evaluations, businessDays, selectedYear, month);
+                totalBonus += monthBonus;
+            });
+            data[collab.name] = totalBonus;
+        });
+
+        return Object.entries(data).map(([name, bonus]) => ({ name, bonus }));
+    }, [collaborators, evaluations, businessDays, selectedYear, selectedQuarter]);
+
+    const monthlyBonusTrends = useMemo(() => {
+        const trends = {};
+        const currentYear = new Date().getFullYear();
+        const currentMonth = new Date().getMonth();
+
+        collaborators.forEach(collab => {
+            trends[collab.name] = [];
+            for (let i = 0; i < 6; i++) { // Last 6 months
+                let year = currentYear;
+                let month = currentMonth - i;
+                if (month < 0) {
+                    month += 12;
+                    year -= 1;
+                }
+                const { totalBonus } = calculateMonthlyBonus(collab.id, evaluations, businessDays, year, month);
+                trends[collab.name].unshift({ month: `${month + 1}/${year}`, bonus: totalBonus });
             }
         });
-        return data;
-    }, [collaborators, evaluations, year]);
-
-    const quarterlyWinners = useMemo(() => {
-        const teams = [...new Set(collaborators.filter(c => c.team !== 'Campo').map(c => c.team))];
-        const winners = {};
-        const months = getMonthsForQuarter(quarter);
-        
-        teams.forEach(team => {
-            const teamMembers = collaborators.filter(c => c.team === team);
-            let bestPerformer = null;
-            let maxScore = -1;
-
-            teamMembers.forEach(member => {
-                const memberData = performanceData[member.name];
-                if(!memberData) return;
-                const isEligible = months.every(m => memberData[m] === null || memberData[m] > 80);
-                
-                if (isEligible) {
-                    const quarterEvals = evaluations.filter(e => e.collaboratorId === member.id && parseDate(e.startDate).getFullYear() === year && months.includes(parseDate(e.startDate).getMonth()) && e.activityType === 'Escritório');
-                    const score = quarterEvals.reduce((acc, e) => {
-                        const duration = (parseDate(e.endDate).getTime() - parseDate(e.startDate).getTime()) / 86400000 + 1;
-                        return acc + (duration * Object.values(e.criteria).reduce((a, b) => a + (b || 0), 0));
-                    }, 0);
-
-                    if (score > maxScore) {
-                        maxScore = score;
-                        bestPerformer = member.name;
-                    }
-                }
-            });
-            winners[team] = bestPerformer;
-        });
-        return winners;
-
-    }, [collaborators, evaluations, performanceData, quarter, year]);
-
-    const chartData = useMemo(() => {
-        const data = [];
-        for (let month = 0; month < 12; month++) {
-            const monthName = new Date(year, month).toLocaleString('pt-BR', { month: 'short' });
-            const entry = { name: monthName.replace('.','').toUpperCase() };
-            Object.keys(performanceData).forEach(name => {
-                const perf = performanceData[name][month];
-                if (perf !== null) entry[name] = perf;
-            });
-            data.push(entry);
-        }
-        return data;
-    }, [performanceData, year]);
+        return trends;
+    }, [collaborators, evaluations, businessDays]);
 
     return (
         <div className="space-y-8">
+            <h2 className="text-2xl font-bold text-gray-900">Dashboard de Bônus</h2>
+
             <Card>
-                <div className="flex justify-between items-center">
-                    <h2 className="text-2xl font-bold">Dashboard de Performance</h2>
-                </div>
-                <div className="flex gap-4 mt-4">
-                    <select value={year} onChange={e => setYear(Number(e.target.value))} className="p-2 border rounded-md"><option>2024</option><option>2025</option></select>
-                    <select value={quarter} onChange={e => setQuarter(Number(e.target.value))} className="p-2 border rounded-md">
-                        <option value={1}>1º Trimestre</option><option value={2}>2º Trimestre</option>
-                        <option value={3}>3º Trimestre</option><option value={4}>4º Trimestre</option>
+                <h3 className="text-xl font-semibold mb-4">Bônus por Colaborador (Trimestral)</h3>
+                <div className="flex gap-4 mb-4">
+                    <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="p-2 border rounded-md">
+                        {years.map(year => <option key={year} value={year}>{year}</option>)}
+                    </select>
+                    <select value={selectedQuarter} onChange={(e) => setSelectedQuarter(Number(e.target.value))} className="p-2 border rounded-md">
+                        <option value={1}>Q1 (Jan-Mar)</option>
+                        <option value={2}>Q2 (Abr-Jun)</option>
+                        <option value={3}>Q3 (Jul-Set)</option>
+                        <option value={4}>Q4 (Out-Dez)</option>
                     </select>
                 </div>
+                <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={quarterlyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip formatter={(value) => `R$ ${value.toFixed(2)}`} />
+                        <Legend />
+                        <Bar dataKey="bonus" fill="#3b82f6" name="Bônus Total" />
+                    </BarChart>
+                </ResponsiveContainer>
             </Card>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <Card>
-                    <h3 className="font-bold text-lg mb-4">Performance Mensal (%)</h3>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-center">
-                            <thead className="bg-gray-100"><tr><th className="p-2 text-left">Mês</th>{Object.keys(performanceData).map(name => <th key={name} className="p-2">{name}</th>)}</tr></thead>
-                            <tbody>
-                                {Array.from({length: 12}).map((_, month) => (
-                                    <tr key={month} className="border-b"><td className="p-2 text-left font-semibold">{new Date(year, month).toLocaleString('pt-BR', {month: 'long'})}</td>
-                                    {Object.keys(performanceData).map(name => {
-                                        const perf = performanceData[name][month];
-                                        const bgColor = perf === null ? 'bg-gray-100' : perf > 80 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-                                        return <td key={name} className={`p-2 font-semibold ${bgColor}`}>{perf !== null ? perf.toFixed(2)+'%' : '-'}</td>
-                                    })}</tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
-                <div className="space-y-8">
-                    <Card>
-                        <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Trophy className="text-yellow-500"/> Ganhadores do Bônus Trimestral (Q{quarter})</h3>
-                        <div className="space-y-2">
-                            {Object.entries(quarterlyWinners).map(([team, name]) => (
-                                <div key={team} className="p-3 bg-yellow-50 rounded-md">
-                                    <p className="text-sm font-bold text-yellow-700">{team}</p>
-                                    <p className="text-lg font-semibold">{name || 'Nenhum ganhador'}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </Card>
-                    <Card>
-                        <h3 className="font-bold text-lg mb-4">Desempenho Mensal (Gráfico)</h3>
-                        <ResponsiveContainer width="100%" height={250}>
-                            <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" />
-                                <YAxis unit="%" domain={[0, 120]}/>
-                                <Tooltip />
-                                <Legend />
-                                {Object.keys(performanceData).map((name, i) => {
-                                    const colors = ["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#0088FE", "#00C49F"];
-                                    return <Line key={name} type="monotone" dataKey={name} stroke={colors[i % colors.length]} />
-                                })}
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </Card>
-                </div>
-            </div>
+
+            <Card>
+                <h3 className="text-xl font-semibold mb-4">Tendência de Bônus (Últimos 6 Meses)</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                    <LineChart margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="month" />
+                        <YAxis />
+                        <Tooltip formatter={(value) => `R$ ${value.toFixed(2)}`} />
+                        <Legend />
+                        {Object.keys(monthlyBonusTrends).map((collabName, index) => (
+                            <Line
+                                key={collabName}
+                                type="monotone"
+                                dataKey="bonus"
+                                data={monthlyBonusTrends[collabName]}
+                                name={collabName}
+                                stroke={`hsl(${index * 60}, 70%, 50%)`}
+                            />
+                        ))}
+                    </LineChart>
+                </ResponsiveContainer>
+            </Card>
         </div>
-    )
+    );
 }
 
-function CalendarModule({ onLaunchEvalModal, isReadOnly = false }) {
-    const { collaborators } = useContext(AppContext);
-    const [selectedCollaboratorId, setSelectedCollaboratorId] = useState(collaborators[0]?.id || null);
+function CalendarModule({ isReadOnly, onLaunchEvalModal }) {
+    const { collaborators, evaluations } = useContext(AppContext);
     const [currentDate, setCurrentDate] = useState(new Date());
+    const [selectedCollaboratorId, setSelectedCollaboratorId] = useState('');
+    const [viewingEvaluation, setViewingEvaluation] = useState(null);
 
     useEffect(() => {
         if (collaborators.length > 0 && !selectedCollaboratorId) {
-            setSelectedCollaboratorId(collaborators[0]?.id);
+            setSelectedCollaboratorId(collaborators[0].id);
         }
     }, [collaborators, selectedCollaboratorId]);
 
+    const handleViewEvaluationDetails = (evaluation) => {
+        setViewingEvaluation(evaluation);
+    };
+
     if (collaborators.length === 0) {
-        return <Card><p className="text-center">Nenhum colaborador para exibir.</p></Card>
+        return <p>Nenhum colaborador cadastrado. Por favor, adicione colaboradores primeiro.</p>;
     }
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
-                <CalendarView 
-                    collaboratorId={selectedCollaboratorId} 
-                    onLaunchEvalModal={onLaunchEvalModal} 
-                    currentDate={currentDate} 
-                    setCurrentDate={setCurrentDate}
-                    isReadOnly={isReadOnly}
+        <div className="space-y-8">
+            <h2 className="text-2xl font-bold text-gray-900">Calendário de Avaliações</h2>
+            <Card>
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Selecionar Colaborador:</label>
+                    <select
+                        value={selectedCollaboratorId}
+                        onChange={(e) => setSelectedCollaboratorId(e.target.value)}
+                        className="p-2 border rounded-md w-full sm:w-auto"
+                    >
+                        {collaborators.map(collab => (
+                            <option key={collab.id} value={collab.id}>{collab.name}</option>
+                        ))}
+                    </select>
+                </div>
+                {selectedCollaboratorId && (
+                    <CalendarView
+                        collaboratorId={selectedCollaboratorId}
+                        onLaunchEvalModal={onLaunchEvalModal}
+                        currentDate={currentDate}
+                        setCurrentDate={setCurrentDate}
+                        isReadOnly={isReadOnly}
+                        onViewEvaluationDetails={handleViewEvaluationDetails}
+                    />
+                )}
+            </Card>
+            {viewingEvaluation && (
+                <EvaluationDetailModal
+                    isOpen={!!viewingEvaluation}
+                    onClose={() => setViewingEvaluation(null)}
+                    evaluation={viewingEvaluation}
                 />
-            </div>
-            <aside>
-                <UserSelector collaborators={collaborators} selectedCollaboratorId={selectedCollaboratorId} setSelectedCollaboratorId={setSelectedCollaboratorId} />
-                <ResultsDashboard collaboratorId={selectedCollaboratorId} currentDate={currentDate} />
-            </aside>
+            )}
         </div>
     );
 }
-
-function AccessControlModule({ onLaunchAccessModal }) {
-    const { users, handleDeleteSystemUser } = useContext(AppContext);
-    
-    const getTeamDisplay = (user) => {
-        if (user.role === 'admin') return 'Admin';
-        if (user.role === 'gerente') return 'Gerente';
-        if (user.role === 'financeiro') return 'Financeiro';
-        if (user.role === 'collaborator') return 'Colaborador';
-        if (user.role === 'manager') {
-            const teams = Array.isArray(user.team) ? user.team : [user.team].filter(Boolean);
-            if(teams.length === 0) return 'Gestor';
-            return `Gestor - ${teams.join(', ')}`;
-        }
-        return user.role;
-    };
-    
-    return (
-        <Card>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">Controle de Acesso ao Sistema</h2>
-                <Button onClick={() => onLaunchAccessModal(null)}><UserPlus size={16} /> Adicionar Usuário</Button>
-            </div>
-            <div className="space-y-3">
-                {users.map(user => (
-                    <div key={user.id} className="p-4 border rounded-lg flex justify-between items-center bg-gray-50">
-                        <div>
-                            <p className="font-bold text-lg">{user.name}</p>
-                            <p className="text-sm text-gray-600">{user.email}</p>
-                            <p className="text-xs font-semibold uppercase text-blue-600 mt-1">{getTeamDisplay(user)}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <IconButton onClick={() => onLaunchAccessModal(user)}><Edit size={18} /></IconButton>
-                            <IconButton onClick={() => handleDeleteSystemUser(user.id, user.name)}>
-                                <Trash2 size={18} className="text-red-500 hover:text-red-700" />
-                            </IconButton>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </Card>
-    );
-}
-
-function CollaboratorManagementModule({ onLaunchCollaboratorModal }) {
-    const { allCollaborators, handleDeleteCollaborator } = useContext(AppContext);
-    return (
-        <Card>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">Gerenciamento de Colaboradores</h2>
-                <Button onClick={() => onLaunchCollaboratorModal(null)}><UserPlus size={16} /> Adicionar Colaborador</Button>
-            </div>
-            <div className="space-y-3">
-                {allCollaborators.map(user => (
-                    <div key={user.id} className="p-4 border rounded-lg flex justify-between items-center bg-gray-50">
-                        <div><p className="font-bold text-lg">{user.name}</p><p className="text-sm text-gray-600">{user.team}</p></div>
-                        <div className="flex items-center gap-3">
-                            <IconButton onClick={() => onLaunchCollaboratorModal(user)}><Edit size={18} /></IconButton>
-                            <IconButton onClick={() => handleDeleteCollaborator(user.id)}><Trash2 size={18} className="text-red-500 hover:text-red-700" /></IconButton>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </Card>
-    );
-}
-
-function BusinessDaysModule() {
-    const { businessDays, handleSaveBusinessDays } = useContext(AppContext);
-    const [year, setYear] = useState(new Date().getFullYear());
-    const [days, setDays] = useState({});
-
-    useEffect(() => {
-        const yearData = {};
-        for (let i = 0; i < 12; i++) {
-            const monthId = `${year}-${String(i + 1).padStart(2, '0')}`;
-            yearData[i] = businessDays[monthId]?.days || 22;
-        }
-        setDays(yearData);
-    }, [year, businessDays]);
-
-    const handleDayChange = (month, value) => {
-        const newDays = { ...days, [month]: value };
-        setDays(newDays);
-    };
-
-    const handleSave = (month) => {
-        const value = days[month];
-        handleSaveBusinessDays(year, month, value);
-    };
-
-    return (
-        <Card>
-            <h2 className="text-2xl font-bold mb-4">Configurar Dias Úteis</h2>
-            <div className="flex items-center gap-4 mb-6">
-                <label className="font-semibold">Ano:</label>
-                <select value={year} onChange={e => setYear(Number(e.target.value))} className="p-2 border rounded-md">
-                    <option>2024</option>
-                    <option>2025</option>
-                    <option>2026</option>
-                </select>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Array.from({length: 12}).map((_, i) => (
-                    <div key={i} className="p-4 border rounded-lg">
-                        <label className="font-bold text-lg">{new Date(year, i).toLocaleString('pt-BR', {month: 'long'})}</label>
-                        <div className="flex items-center gap-2 mt-2">
-                            <input 
-                                type="number" 
-                                value={days[i] || ''} 
-                                onChange={e => handleDayChange(i, e.target.value)} 
-                                className="w-full p-2 border rounded-md"
-                            />
-                            <Button onClick={() => handleSave(i)}><Save size={16}/></Button>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </Card>
-    );
-}
-
-
-// --- SUB-COMPONENTES ---
 
 function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurrentDate, isReadOnly = false, onViewEvaluationDetails }) {
     const { evaluations, handleDeleteEvaluation } = useContext(AppContext);
@@ -1042,33 +956,50 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                     const dayEvaluations = getEvaluationsForDay(dayNumber);
                     const isInRange = isDateInRange(dayNumber);
                     
-                    const hasNegativeEvaluation = dayEvaluations.some(evalItem => 
-                        Object.values(evalItem.criteria).some(criterionValue => criterionValue === 0)
-                    );
+                    // NOVO: Verifica se há alguma avaliação não finalizada no dia
+                    const hasUnfinalizedEvaluation = dayEvaluations.some(evalItem => !evalItem.isFinalized);
+
+                    // Define a classe de fundo com base na nova condição
+                    const dayBgClass = hasUnfinalizedEvaluation 
+                        ? 'bg-red-600' // Vermelho forte se não finalizada
+                        : isInRange 
+                        ? 'bg-blue-100 border-blue-300' 
+                        : 'bg-white';
 
                     return (
-                        <div key={dayNumber} onClick={!isReadOnly ? () => handleDayClick(dayNumber) : undefined} className={`p-2 h-28 border rounded-md transition-colors ${isInRange ? 'bg-blue-100 border-blue-300' : 'bg-white'} ${!isReadOnly ? 'cursor-pointer hover:bg-gray-100' : 'cursor-default'} relative`}>
-                            <span className="font-bold">{dayNumber}</span>
-                            {hasNegativeEvaluation && (
-                                <span className="absolute top-1 right-1 text-red-500 font-bold text-lg">X</span>
-                            )}
+                        <div 
+                            key={dayNumber} 
+                            onClick={!isReadOnly ? () => handleDayClick(dayNumber) : undefined} 
+                            className={`p-2 h-28 border rounded-md transition-colors ${dayBgClass} ${!isReadOnly ? 'cursor-pointer hover:bg-gray-100' : 'cursor-default'} relative`}
+                        >
+                            <span className={`font-bold ${hasUnfinalizedEvaluation ? 'text-white' : ''}`}>{dayNumber}</span>
                             <div className="mt-1 space-y-1 text-xs text-left">
-                                {dayEvaluations.map(e => (
-                                    <div 
-                                        key={e.id} 
-                                        className={`p-1 rounded truncate relative group ${onViewEvaluationDetails ? 'cursor-pointer' : ''}`}
-                                        style={{backgroundColor: e.activityType === 'Escritório' ? '#dcfce7' : '#ffedd5', color: e.activityType === 'Escritório' ? '#166534' : '#9a3412'}}
-                                        onClick={onViewEvaluationDetails ? (evt) => { evt.stopPropagation(); onViewEvaluationDetails(e); } : undefined}
-                                    >
-                                        {e.csName}
-                                        {!isReadOnly && (
-                                            <div className="absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 bg-white/70 backdrop-blur-sm rounded-full px-1">
-                                                <IconButton onClick={(evt) => {evt.stopPropagation(); onLaunchEvalModal(e, null, collaboratorId)}}><Edit size={12}/></IconButton>
-                                                <IconButton onClick={(evt) => {evt.stopPropagation(); handleDeleteEvaluation(e.id)}}><Trash2 size={12}/></IconButton>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
+                                {dayEvaluations.map(e => {
+                                    // Define a cor do item da avaliação
+                                    const itemBgColor = e.isFinalized 
+                                        ? (e.activityType === 'Escritório' ? '#dcfce7' : '#ffedd5')
+                                        : '#fecaca'; // Um vermelho mais claro para o item em si
+                                    const itemTextColor = e.isFinalized
+                                        ? (e.activityType === 'Escritório' ? '#166534' : '#9a3412')
+                                        : '#991b1b';
+
+                                    return (
+                                        <div 
+                                            key={e.id} 
+                                            className={`p-1 rounded truncate relative group ${onViewEvaluationDetails ? 'cursor-pointer' : ''}`}
+                                            style={{backgroundColor: itemBgColor, color: itemTextColor}}
+                                            onClick={onViewEvaluationDetails ? (evt) => { evt.stopPropagation(); onViewEvaluationDetails(e); } : undefined}
+                                        >
+                                            {e.csName}
+                                            {!isReadOnly && (
+                                                <div className="absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 bg-white/70 backdrop-blur-sm rounded-full px-1">
+                                                    <IconButton onClick={(evt) => {evt.stopPropagation(); onLaunchEvalModal(e, null, collaboratorId)}}><Edit size={12}/></IconButton>
+                                                    <IconButton onClick={(evt) => {evt.stopPropagation(); handleDeleteEvaluation(e.id)}}><Trash2 size={12}/></IconButton>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     )
@@ -1078,919 +1009,905 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
     );
 }
 
-function UserSelector({ collaborators, selectedCollaboratorId, setSelectedCollaboratorId }) {
-    return (
-        <Card className="mb-6">
-            <h3 className="font-bold text-lg mb-3 flex items-center gap-2"><Users className="w-5 h-5 text-gray-500" />Colaborador</h3>
-            <select value={selectedCollaboratorId || ''} onChange={(e) => setSelectedCollaboratorId(e.target.value)} className="w-full p-2 border rounded-md bg-white">
-                {collaborators.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
-            </select>
-        </Card>
-    );
-}
-
-function ResultsDashboard({ collaboratorId, currentDate }) {
+function FinancialModule() {
     const { allCollaborators, evaluations, businessDays } = useContext(AppContext);
-    
-    const collaborator = allCollaborators.find(c => c.id === collaboratorId);
-    
-    const monthlyData = useMemo(() => {
-        if (!collaboratorId) return { officeBonus: 0, fieldBonus: 0, officeDaysWorked: 0, totalBusinessDays: 0 };
-        return calculateMonthlyBonus(collaboratorId, evaluations, businessDays, currentDate.getFullYear(), currentDate.getMonth());
-    }, [collaboratorId, evaluations, businessDays, currentDate]);
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+
+    const years = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        return Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
+    }, []);
+
+    const months = Array.from({ length: 12 }, (_, i) => new Date(0, i).toLocaleString('pt-BR', { month: 'long' }));
+
+    const monthlyReport = useMemo(() => {
+        const report = [];
+        allCollaborators.forEach(collab => {
+            const { officeBonus, fieldBonus, totalBonus, officeDaysWorked, totalBusinessDays, officeEvals, fieldEvals } = calculateMonthlyBonus(collab.id, evaluations, businessDays, selectedYear, selectedMonth);
+            report.push({
+                id: collab.id,
+                name: collab.name,
+                officeBonus: officeBonus,
+                fieldBonus: fieldBonus,
+                totalBonus: totalBonus,
+                officeDaysWorked: officeDaysWorked,
+                totalBusinessDays: totalBusinessDays,
+                officeEvals: officeEvals,
+                fieldEvals: fieldEvals
+            });
+        });
+        return report;
+    }, [allCollaborators, evaluations, businessDays, selectedYear, selectedMonth]);
+
+    const handleExportToCSV = () => {
+        const headers = ["Colaborador", "Bônus Escritório (R$)", "Bônus Campo (R$)", "Bônus Total (R$)", "Dias Escritório Trabalhados", "Total Dias Úteis", "Avaliações Escritório", "Avaliações Campo"];
+        const rows = monthlyReport.map(row => [
+            row.name,
+            row.officeBonus.toFixed(2),
+            row.fieldBonus.toFixed(2),
+            row.totalBonus.toFixed(2),
+            row.officeDaysWorked,
+            row.totalBusinessDays,
+            row.officeEvals,
+            row.fieldEvals
+        ]);
+
+        let csvContent = "data:text/csv;charset=utf-8," 
+            + headers.join(";") + "\n"
+            + rows.map(e => e.join(";")).join("\n");
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `relatorio_bonus_${selectedMonth + 1}_${selectedYear}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     return (
-        <Card>
-            <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><BarChart3 /> Resumo de {currentDate.toLocaleDateString('pt-BR', { month: 'long' })}</h3>
-            <p className="mb-4 text-sm font-semibold text-gray-700">Colaborador: {collaborator?.name || 'N/A'}</p>
-            <div className="space-y-4">
-                <div className="p-3 bg-green-50 rounded-lg"><p className="font-bold text-green-800">Bônus Escritório</p><p className="text-2xl font-bold text-green-700">R$ {monthlyData.officeBonus.toFixed(2)}</p><p className="text-sm text-green-600">{monthlyData.officeDaysWorked} de {monthlyData.totalBusinessDays} dias úteis trabalhados</p></div>
-                <div className="p-3 bg-orange-50 rounded-lg"><p className="font-bold text-orange-800">Bônus Campo (Diárias)</p><p className="text-2xl font-bold text-orange-700">R$ {monthlyData.fieldBonus.toFixed(2)}</p><p className="text-sm text-orange-600">Valor acumulado no mês.</p></div>
-                <div className="p-3 bg-blue-50 rounded-lg border-t-2 border-blue-200 mt-4"><p className="font-bold text-blue-800">Total Bônus no Mês</p><p className="text-3xl font-bold text-blue-700">R$ {(monthlyData.officeBonus + monthlyData.fieldBonus).toFixed(2)}</p></div>
-            </div>
-        </Card>
-    );
-}
-
-// --- MODAIS ---
-
-function ConfirmationModal({ isOpen, onClose, onConfirm, title, message }) {
-    if (!isOpen) return null;
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <Card className="w-full max-w-md">
-                <div className="flex flex-col items-center text-center">
-                    <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4"><AlertTriangle className="w-6 h-6 text-red-600" /></div>
-                    <h2 className="text-xl font-bold mb-2">{title}</h2>
-                    <p className="text-gray-600 mb-6">{message}</p>
-                    <div className="flex justify-center gap-4 w-full"><Button variant="secondary" onClick={onClose} className="w-full">Cancelar</Button><Button variant="danger" onClick={onConfirm} className="w-full">Confirmar</Button></div>
+        <div className="space-y-8">
+            <h2 className="text-2xl font-bold text-gray-900">Módulo Financeiro</h2>
+            <Card>
+                <h3 className="text-xl font-semibold mb-4">Relatório Mensal de Bônus</h3>
+                <div className="flex gap-4 mb-4">
+                    <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="p-2 border rounded-md">
+                        {years.map(year => <option key={year} value={year}>{year}</option>)}
+                    </select>
+                    <select value={selectedMonth} onChange={(e) => setSelectedMonth(Number(e.target.value))} className="p-2 border rounded-md">
+                        {months.map((monthName, index) => <option key={index} value={index}>{monthName}</option>)}
+                    </select>
+                    <Button onClick={handleExportToCSV} variant="secondary"><FileSpreadsheet size={16} /> Exportar CSV</Button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr className="bg-gray-100 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">
+                                <th className="py-3 px-4 border-b">Colaborador</th>
+                                <th className="py-3 px-4 border-b">Bônus Escritório (R$)</th>
+                                <th className="py-3 px-4 border-b">Bônus Campo (R$)</th>
+                                <th className="py-3 px-4 border-b">Bônus Total (R$)</th>
+                                <th className="py-3 px-4 border-b">Dias Escritório Trabalhados</th>
+                                <th className="py-3 px-4 border-b">Total Dias Úteis</th>
+                                <th className="py-3 px-4 border-b">Avaliações Escritório</th>
+                                <th className="py-3 px-4 border-b">Avaliações Campo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {monthlyReport.map(row => (
+                                <tr key={row.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                    <td className="py-3 px-4 text-sm text-gray-800">{row.name}</td>
+                                    <td className="py-3 px-4 text-sm text-gray-800">{row.officeBonus.toFixed(2)}</td>
+                                    <td className="py-3 px-4 text-sm text-gray-800">{row.fieldBonus.toFixed(2)}</td>
+                                    <td className="py-3 px-4 text-sm text-gray-800 font-semibold">{row.totalBonus.toFixed(2)}</td>
+                                    <td className="py-3 px-4 text-sm text-gray-800">{row.officeDaysWorked}</td>
+                                    <td className="py-3 px-4 text-sm text-gray-800">{row.totalBusinessDays}</td>
+                                    <td className="py-3 px-4 text-sm text-gray-800">{row.officeEvals}</td>
+                                    <td className="py-3 px-4 text-sm text-gray-800">{row.fieldEvals}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </Card>
         </div>
     );
 }
 
-function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaboratorId }) {
+function AuditModule() {
+    const { evaluations, allCollaborators, users } = useContext(AppContext);
+    const [selectedCollaboratorId, setSelectedCollaboratorId] = useState('');
+    const [selectedManagerId, setSelectedManagerId] = useState('');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+
+    const managers = useMemo(() => users.filter(u => u.role === 'manager' || u.role === 'admin' || u.role === 'gerente'), [users]);
+
+    const filteredEvaluations = useMemo(() => {
+        return evaluations.filter(evalItem => {
+            const evalDate = parseDate(evalItem.createdAt);
+            const start = startDate ? new Date(startDate) : null;
+            const end = endDate ? new Date(endDate) : null;
+
+            const matchesCollaborator = selectedCollaboratorId ? evalItem.collaboratorId === selectedCollaboratorId : true;
+            const matchesManager = selectedManagerId ? evalItem.managerId === selectedManagerId : true;
+            const matchesDate = (!start || evalDate >= start) && (!end || evalDate <= end);
+
+            return matchesCollaborator && matchesManager && matchesDate;
+        }).sort((a, b) => parseDate(b.createdAt).getTime() - parseDate(a.createdAt).getTime());
+    }, [evaluations, selectedCollaboratorId, selectedManagerId, startDate, endDate]);
+
+    const getCollaboratorName = (id) => allCollaborators.find(c => c.id === id)?.name || 'Desconhecido';
+    const getManagerName = (id) => users.find(u => u.id === id)?.name || 'Desconhecido';
+
+    return (
+        <div className="space-y-8">
+            <h2 className="text-2xl font-bold text-gray-900">Módulo de Auditoria</h2>
+            <Card>
+                <h3 className="text-xl font-semibold mb-4">Filtrar Avaliações</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Colaborador</label>
+                        <select value={selectedCollaboratorId} onChange={e => setSelectedCollaboratorId(e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                            <option value="">Todos</option>
+                            {allCollaborators.map(collab => <option key={collab.id} value={collab.id}>{collab.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Gerente/Admin</label>
+                        <select value={selectedManagerId} onChange={e => setSelectedManagerId(e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                            <option value="">Todos</option>
+                            {managers.map(manager => <option key={manager.id} value={manager.id}>{manager.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Data Início</label>
+                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full p-2 border rounded-md" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Data Fim</label>
+                        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 block w-full p-2 border rounded-md" />
+                    </div>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr className="bg-gray-100 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">
+                                <th className="py-3 px-4 border-b">Data</th>
+                                <th className="py-3 px-4 border-b">Colaborador</th>
+                                <th className="py-3 px-4 border-b">Tipo Atividade</th>
+                                <th className="py-3 px-4 border-b">CS Name</th>
+                                <th className="py-3 px-4 border-b">Gerente/Admin</th>
+                                <th className="py-3 px-4 border-b">Finalizada</th>
+                                <th className="py-3 px-4 border-b">Observação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredEvaluations.length === 0 ? (
+                                <tr><td colSpan="7" className="py-4 text-center text-gray-500">Nenhuma avaliação encontrada com os filtros aplicados.</td></tr>
+                            ) : (
+                                filteredEvaluations.map(evalItem => (
+                                    <tr key={evalItem.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                        <td className="py-3 px-4 text-sm text-gray-800">{new Date(evalItem.createdAt).toLocaleDateString('pt-BR')}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{getCollaboratorName(evalItem.collaboratorId)}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{evalItem.activityType}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{evalItem.csName}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{getManagerName(evalItem.managerId)}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{evalItem.isFinalized ? <CheckCircle2 className="text-green-500" size={20} /> : <XCircle className="text-red-500" size={20} />}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800 max-w-xs truncate" title={evalItem.observation}>{evalItem.observation}</td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+        </div>
+    );
+}
+
+function CollaboratorViewModule() {
+    const { currentUser, evaluations, businessDays } = useContext(AppContext);
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+    const [viewingEvaluation, setViewingEvaluation] = useState(null);
+
+    const years = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        return Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
+    }, []);
+
+    const months = Array.from({ length: 12 }, (_, i) => new Date(0, i).toLocaleString('pt-BR', { month: 'long' }));
+
+    const myMonthlyBonus = useMemo(() => {
+        if (!currentUser?.collaboratorId) return null;
+        return calculateMonthlyBonus(currentUser.collaboratorId, evaluations, businessDays, selectedYear, selectedMonth);
+    }, [currentUser, evaluations, businessDays, selectedYear, selectedMonth]);
+
+    const myEvaluations = useMemo(() => {
+        if (!currentUser?.collaboratorId) return [];
+        return evaluations.filter(e => {
+            const evalDate = parseDate(e.startDate);
+            return e.collaboratorId === currentUser.collaboratorId &&
+                   evalDate.getFullYear() === selectedYear &&
+                   evalDate.getMonth() === selectedMonth;
+        }).sort((a, b) => parseDate(b.startDate).getTime() - parseDate(a.startDate).getTime());
+    }, [currentUser, evaluations, selectedYear, selectedMonth]);
+
+    if (!currentUser?.collaboratorId) {
+        return <p>Seu perfil de usuário não está associado a um colaborador. Entre em contato com o administrador.</p>;
+    }
+
+    return (
+        <div className="space-y-8">
+            <h2 className="text-2xl font-bold text-gray-900">Minhas Avaliações e Bônus</h2>
+            <Card>
+                <h3 className="text-xl font-semibold mb-4">Resumo Mensal</h3>
+                <div className="flex gap-4 mb-4">
+                    <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="p-2 border rounded-md">
+                        {years.map(year => <option key={year} value={year}>{year}</option>)}
+                    </select>
+                    <select value={selectedMonth} onChange={(e) => setSelectedMonth(Number(e.target.value))} className="p-2 border rounded-md">
+                        {months.map((monthName, index) => <option key={index} value={index}>{monthName}</option>)}
+                    </select>
+                </div>
+                {myMonthlyBonus ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                        <div className="p-4 bg-blue-50 rounded-lg shadow-sm">
+                            <p className="text-sm text-blue-700">Bônus Escritório</p>
+                            <p className="text-2xl font-bold text-blue-800">R$ {myMonthlyBonus.officeBonus.toFixed(2)}</p>
+                        </div>
+                        <div className="p-4 bg-yellow-50 rounded-lg shadow-sm">
+                            <p className="text-sm text-yellow-700">Bônus Campo</p>
+                            <p className="text-2xl font-bold text-yellow-800">R$ {myMonthlyBonus.fieldBonus.toFixed(2)}</p>
+                        </div>
+                        <div className="p-4 bg-green-50 rounded-lg shadow-sm">
+                            <p className="text-sm text-green-700">Bônus Total</p>
+                            <p className="text-2xl font-bold text-green-800">R$ {myMonthlyBonus.totalBonus.toFixed(2)}</p>
+                        </div>
+                    </div>
+                ) : (
+                    <p className="text-gray-600">Nenhum dado de bônus disponível para o período selecionado.</p>
+                )}
+            </Card>
+
+            <Card>
+                <h3 className="text-xl font-semibold mb-4">Minhas Avaliações do Mês</h3>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr className="bg-gray-100 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">
+                                <th className="py-3 px-4 border-b">Período</th>
+                                <th className="py-3 px-4 border-b">Tipo Atividade</th>
+                                <th className="py-3 px-4 border-b">CS Name</th>
+                                <th className="py-3 px-4 border-b">Gerente</th>
+                                <th className="py-3 px-4 border-b">Finalizada</th>
+                                <th className="py-3 px-4 border-b">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {myEvaluations.length === 0 ? (
+                                <tr><td colSpan="6" className="py-4 text-center text-gray-500">Nenhuma avaliação encontrada para este mês.</td></tr>
+                            ) : (
+                                myEvaluations.map(evalItem => (
+                                    <tr key={evalItem.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                        <td className="py-3 px-4 text-sm text-gray-800">{evalItem.startDate} a {evalItem.endDate}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{evalItem.activityType}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{evalItem.csName}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{evalItem.managerName}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{evalItem.isFinalized ? <CheckCircle2 className="text-green-500" size={20} /> : <XCircle className="text-red-500" size={20} />}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">
+                                            <Button variant="secondary" onClick={() => setViewingEvaluation(evalItem)}>Ver Detalhes</Button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+            {viewingEvaluation && (
+                <EvaluationDetailModal
+                    isOpen={!!viewingEvaluation}
+                    onClose={() => setViewingEvaluation(null)}
+                    evaluation={viewingEvaluation}
+                />
+            )}
+        </div>
+    );
+}
+
+function CollaboratorManagementModule({ onLaunchCollaboratorModal }) {
+    const { allCollaborators, handleDeleteCollaborator } = useContext(AppContext);
+
+    return (
+        <div className="space-y-8">
+            <h2 className="text-2xl font-bold text-gray-900">Gestão de Colaboradores</h2>
+            <Card>
+                <div className="flex justify-end mb-4">
+                    <Button onClick={() => onLaunchCollaboratorModal(null)}><UserPlus size={16} /> Adicionar Colaborador</Button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr className="bg-gray-100 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">
+                                <th className="py-3 px-4 border-b">Nome</th>
+                                <th className="py-3 px-4 border-b">Equipe</th>
+                                <th className="py-3 px-4 border-b">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {allCollaborators.length === 0 ? (
+                                <tr><td colSpan="3" className="py-4 text-center text-gray-500">Nenhum colaborador cadastrado.</td></tr>
+                            ) : (
+                                allCollaborators.map(collab => (
+                                    <tr key={collab.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                        <td className="py-3 px-4 text-sm text-gray-800">{collab.name}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{collab.team}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800 flex gap-2">
+                                            <IconButton onClick={() => onLaunchCollaboratorModal(collab)}><Edit size={18} /></IconButton>
+                                            <IconButton onClick={() => handleDeleteCollaborator(collab.id)}><Trash2 size={18} /></IconButton>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+        </div>
+    );
+}
+
+function AccessControlModule({ onLaunchAccessModal }) {
+    const { users, handleDeleteSystemUser } = useContext(AppContext);
+
+    return (
+        <div className="space-y-8">
+            <h2 className="text-2xl font-bold text-gray-900">Controle de Acesso</h2>
+            <Card>
+                <div className="flex justify-end mb-4">
+                    <Button onClick={() => onLaunchAccessModal(null)}><UserPlus size={16} /> Adicionar Usuário</Button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead>
+                            <tr className="bg-gray-100 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">
+                                <th className="py-3 px-4 border-b">Nome</th>
+                                <th className="py-3 px-4 border-b">Email</th>
+                                <th className="py-3 px-4 border-b">Função</th>
+                                <th className="py-3 px-4 border-b">Equipe</th>
+                                <th className="py-3 px-4 border-b">Colaborador Associado</th>
+                                <th className="py-3 px-4 border-b">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {users.length === 0 ? (
+                                <tr><td colSpan="6" className="py-4 text-center text-gray-500">Nenhum usuário cadastrado.</td></tr>
+                            ) : (
+                                users.map(user => (
+                                    <tr key={user.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                        <td className="py-3 px-4 text-sm text-gray-800">{user.name}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{user.email}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{user.role}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{user.team || '-'}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800">{user.collaboratorId || '-'}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-800 flex gap-2">
+                                            <IconButton onClick={() => onLaunchAccessModal(user)}><Edit size={18} /></IconButton>
+                                            <IconButton onClick={() => handleDeleteSystemUser(user.id, user.name)}><Trash2 size={18} /></IconButton>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+        </div>
+    );
+}
+
+function BusinessDaysModule() {
+    const { businessDays, handleSaveBusinessDays } = useContext(AppContext);
+    const [year, setYear] = useState(new Date().getFullYear());
+    const [month, setMonth] = useState(new Date().getMonth());
+    const [days, setDays] = useState('');
+
+    const years = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        return Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
+    }, []);
+
+    const months = Array.from({ length: 12 }, (_, i) => new Date(0, i).toLocaleString('pt-BR', { month: 'long' }));
+
+    useEffect(() => {
+        const monthId = `${year}-${String(month + 1).padStart(2, '0')}`;
+        setDays(businessDays[monthId]?.days || '');
+    }, [year, month, businessDays]);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (days) {
+            handleSaveBusinessDays(year, month, days);
+            alert('Dias úteis salvos com sucesso!');
+        }
+    };
+
+    return (
+        <div className="space-y-8">
+            <h2 className="text-2xl font-bold text-gray-900">Configurar Dias Úteis</h2>
+            <Card>
+                <h3 className="text-xl font-semibold mb-4">Definir Dias Úteis por Mês</h3>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="flex gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Ano</label>
+                            <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="mt-1 p-2 border rounded-md">
+                                {years.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Mês</label>
+                            <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="mt-1 p-2 border rounded-md">
+                                {months.map((monthName, index) => <option key={index} value={index}>{monthName}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Dias Úteis</label>
+                            <input type="number" value={days} onChange={(e) => setDays(e.target.value)} className="mt-1 p-2 border rounded-md w-24" min="1" max="31" required />
+                        </div>
+                    </div>
+                    <Button type="submit"><Save size={16} /> Salvar Dias Úteis</Button>
+                </form>
+                <div className="mt-6">
+                    <h4 className="text-lg font-semibold mb-2">Dias Úteis Registrados:</h4>
+                    <ul className="list-disc list-inside">
+                        {Object.entries(businessDays).sort().map(([monthId, data]) => (
+                            <li key={monthId} className="text-sm text-gray-700">{monthId}: {data.days} dias</li>
+                        ))}
+                    </ul>
+                </div>
+            </Card>
+        </div>
+    );
+}
+
+// --- MODAIS ---
+function Modal({ isOpen, onClose, children, title }) {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all scale-100 opacity-100">
+                <div className="flex justify-between items-center p-4 border-b">
+                    <h2 className="text-xl font-bold text-gray-800">{title}</h2>
+                    <IconButton onClick={onClose}><X size={20} /></IconButton>
+                </div>
+                <div className="p-6">
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function EvaluationModal({ isOpen, onClose, initialData, dateRange, collaboratorId }) {
     const { handleSaveEvaluation, allCollaborators } = useContext(AppContext);
-    const [formData, setFormData] = useState(null);
-    const [error, setError] = useState('');
-    
+    const [formData, setFormData] = useState({
+        activityType: 'Escritório',
+        csName: '',
+        startDate: '',
+        endDate: '',
+        criteria: {},
+        observation: '',
+        isFinalized: false, // NOVO: Campo para indicar se a avaliação está finalizada
+        collaboratorId: collaboratorId
+    });
+
     useEffect(() => {
         const defaultData = {
-            startDate: dateRange?.start ? new Date(dateRange.start.getFullYear(), dateRange.start.getMonth(), dateRange.start.getDate()).toISOString().split("T")[0] : "",
-            endDate: dateRange?.end ? new Date(dateRange.end.getFullYear(), dateRange.end.getMonth(), dateRange.end.getDate()).toISOString().split("T")[0] : "",
-            activityType: "Escritório",
-            csName: "",
-            observation: "",
-            criteria: { prazo: 1, qualidade: 1, apontamento: 1 },
+            activityType: 'Escritório',
+            csName: '',
+            startDate: dateRange?.start ? dateRange.start.toISOString().split('T')[0] : '',
+            endDate: dateRange?.end ? dateRange.end.toISOString().split('T')[0] : '',
+            criteria: {},
+            observation: '',
+            isFinalized: false, // <-- Adicione o valor padrão
             collaboratorId: collaboratorId
         };
         const dataToEdit = initialData ? { ...initialData } : defaultData;
         setFormData(dataToEdit);
     }, [initialData, dateRange, collaboratorId]);
 
-    useEffect(() => {
-        if (formData && formData.activityType) {
-            let newCriteria = {};
-            const currentCriteria = formData.criteria || {};
-            if (formData.activityType === 'Escritório') {
-                newCriteria = { prazo: currentCriteria.prazo ?? 1, qualidade: currentCriteria.qualidade ?? 1, apontamento: currentCriteria.apontamento ?? 1 };
-            } else {
-                newCriteria = { prazo: currentCriteria.prazo ?? 1, despesa: currentCriteria.despesa ?? 1, qualidade: currentCriteria.qualidade ?? 1, equipamento: currentCriteria.equipamento ?? 1 };
-            }
-            if (JSON.stringify(newCriteria) !== JSON.stringify(currentCriteria)) {
-                setFormData(f => ({ ...f, criteria: newCriteria }));
-            }
-        }
-    }, [formData?.activityType, formData?.criteria]);
+    const handleChange = (field, value) => {
+        setFormData(f => ({ ...f, [field]: value }));
+    };
 
+    const handleCriteriaChange = (key, value) => {
+        setFormData(f => ({
+            ...f,
+            criteria: {
+                ...f.criteria,
+                [key]: value
+            }
+        }));
+    };
 
-    const handleSave = () => {
-        if (!formData.csName.trim()) {
-            setError('O nome da CS é obrigatório.');
-            return;
-        }
-        handleSaveEvaluation(formData);
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        await handleSaveEvaluation(formData);
         onClose();
     };
 
-    if (!isOpen || !formData) return null;
+    const renderCriteria = () => {
+        if (formData.activityType === 'Escritório') {
+            return (
+                <div className="space-y-3">
+                    <h4 className="font-semibold text-gray-700">Critérios de Avaliação (Escritório)</h4>
+                    {[1, 2, 3].map(i => (
+                        <div key={i} className="flex items-center gap-2">
+                            <label className="flex-1 text-sm">Critério {i}</label>
+                            <select value={formData.criteria[`criterio${i}`] || ''} onChange={e => handleCriteriaChange(`criterio${i}`, Number(e.target.value))} className="p-2 border rounded-md">
+                                <option value="">Selecione</option>
+                                <option value={0}>Não Atendido</option>
+                                <option value={1}>Parcialmente Atendido</option>
+                                <option value={2}>Totalmente Atendido</option>
+                            </select>
+                        </div>
+                    ))}
+                </div>
+            );
+        } else if (formData.activityType === 'Campo') {
+            return (
+                <div className="space-y-3">
+                    <h4 className="font-semibold text-gray-700">Critérios de Avaliação (Campo)</h4>
+                    <div className="flex items-center gap-2">
+                        <label className="flex-1 text-sm">Equipamento</label>
+                        <select value={formData.criteria.equipamento || ''} onChange={e => handleCriteriaChange('equipamento', Number(e.target.value))} className="p-2 border rounded-md">
+                            <option value="">Selecione</option>
+                            <option value={0}>Falha</option>
+                            <option value={1}>OK</option>
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="flex-1 text-sm">Checklist</label>
+                        <select value={formData.criteria.checklist || ''} onChange={e => handleCriteriaChange('checklist', Number(e.target.value))} className="p-2 border rounded-md">
+                            <option value="">Selecione</option>
+                            <option value={0}>Não Conforme</option>
+                            <option value={1}>Conforme</option>
+                        </select>
+                    </div>
+                </div>
+            );
+        }
+        return null;
+    };
+
     const selectedCollaborator = allCollaborators.find(c => c.id === formData.collaboratorId);
 
     return (
-         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-             <Card className="w-full max-w-lg my-8">
-                 <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{initialData ? 'Editar' : 'Lançar'} Avaliação</h2><button onClick={onClose}><X className="text-gray-500" /></button></div>
-                 <div className="space-y-4">
-                     <div>
-                         <label className="block text-sm font-medium text-gray-700">Colaborador</label>
-                         <input type="text" value={selectedCollaborator?.name || ''} className="mt-1 block w-full p-2 border rounded-md bg-gray-100" disabled />
-                     </div>
-                     <p className="font-semibold bg-gray-100 p-2 rounded-md">Período: {new Date(formData.startDate+'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(formData.endDate+'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                     <div><label className="block text-sm font-medium text-gray-700">Tipo de Atividade</label><div className="mt-1 grid grid-cols-2 gap-2"><button onClick={() => setFormData(f => ({...f, activityType: 'Escritório'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Escritório' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Briefcase size={16}/> Escritório</button><button onClick={() => setFormData(f => ({...f, activityType: 'Campo'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Campo' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Mountain size={16}/> Campo</button></div></div>
-                     <div><label className="block text-sm font-medium text-gray-700">Nome da CS (Contrato)</label><input type="text" value={formData.csName} onChange={e => {setFormData(f => ({...f, csName: e.target.value})); setError('')}} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : 'border-gray-300'}`} />{error && <p className="text-red-500 text-xs mt-1">{error}</p>}</div>
-                     <div><label className="block text-sm font-medium text-gray-700">Critérios</label>
-                         <div className="mt-1 space-y-2 p-3 bg-gray-50 rounded-md">
-                             {Object.entries(formData.criteria).map(([key, value]) => (
-                                 <div key={key} className="flex justify-between items-center"><span className="capitalize font-medium text-gray-800">{key.replace('equipamento', 'equip./veículo')}</span><select value={value} onChange={e => setFormData(f => ({...f, criteria: {...f.criteria, [key]: Number(e.target.value)}}))} className="p-1 border rounded-md"><option value={1}>Sim</option><option value={0}>Não</option></select></div>
-                             ))}
-                         </div>
-                     </div>
-                     <div><label className="block text-sm font-medium text-gray-700">Observação (Opcional)</label><textarea value={formData.observation} onChange={e => setFormData(f => ({...f, observation: e.target.value}))} rows="2" className="mt-1 block w-full p-2 border rounded-md"></textarea></div>
-                     <div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancelar</Button><Button variant="primary" onClick={handleSave}><Save size={16}/> Salvar</Button></div>
-                 </div>
-             </Card>
-         </div>
+        <Modal isOpen={isOpen} onClose={onClose} title={initialData ? 'Editar Avaliação' : 'Lançar Nova Avaliação'}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Colaborador</label>
+                    <select value={formData.collaboratorId} onChange={e => handleChange('collaboratorId', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required>
+                        <option value="">Selecione um colaborador</option>
+                        {allCollaborators.map(collab => (
+                            <option key={collab.id} value={collab.id}>{collab.name}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Tipo de Atividade</label>
+                    <select value={formData.activityType} onChange={e => handleChange('activityType', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                        <option value="Escritório">Escritório</option>
+                        <option value="Campo">Campo</option>
+                    </select>
+                </div>
+                {formData.activityType === 'Campo' && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Nome do CS</label>
+                        <input type="text" value={formData.csName} onChange={e => handleChange('csName', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
+                    </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Data Início</label>
+                        <input type="date" value={formData.startDate} onChange={e => handleChange('startDate', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Data Fim</label>
+                        <input type="date" value={formData.endDate} onChange={e => handleChange('endDate', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
+                    </div>
+                </div>
+                {renderCriteria()}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Observação</label>
+                    <textarea value={formData.observation} onChange={e => handleChange('observation', e.target.value)} className="mt-1 block w-full p-2 border rounded-md h-24"></textarea>
+                </div>
+                
+                {/* NOVO: Checkbox Avaliação Finalizada */}
+                <div>
+                    <label className="flex items-center space-x-3 cursor-pointer p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <input 
+                            type="checkbox"
+                            checked={formData.isFinalized || false}
+                            onChange={e => setFormData(f => ({...f, isFinalized: e.target.checked}))}
+                            className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="font-semibold text-yellow-800">Avaliação Finalizada</span>
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1">
+                        Marque esta caixa para confirmar que a avaliação está completa. Avaliações não finalizadas não entram no cálculo do bônus.
+                    </p>
+                </div>
+
+                <div className="flex justify-end gap-3 mt-6">
+                    <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+                    <Button type="submit"><Save size={16} /> Salvar Avaliação</Button>
+                </div>
+            </form>
+        </Modal>
     );
 }
 
-function EvaluationDetailModal({ isOpen, onClose, evaluationData }) {
-    if (!isOpen || !evaluationData) return null;
+function EvaluationDetailModal({ isOpen, onClose, evaluation }) {
+    if (!evaluation) return null;
 
-    const { csName, activityType, startDate, endDate, criteria, observation, managerName } = evaluationData;
+    const renderCriteria = () => {
+        if (evaluation.activityType === 'Escritório') {
+            return (
+                <div className="space-y-2">
+                    <p><span className="font-semibold">Critério 1:</span> {evaluation.criteria.criterio1 === 0 ? 'Não Atendido' : evaluation.criteria.criterio1 === 1 ? 'Parcialmente Atendido' : 'Totalmente Atendido'}</p>
+                    <p><span className="font-semibold">Critério 2:</span> {evaluation.criteria.criterio2 === 0 ? 'Não Atendido' : evaluation.criteria.criterio2 === 1 ? 'Parcialmente Atendido' : 'Totalmente Atendido'}</p>
+                    <p><span className="font-semibold">Critério 3:</span> {evaluation.criteria.criterio3 === 0 ? 'Não Atendido' : evaluation.criteria.criterio3 === 1 ? 'Parcialmente Atendido' : 'Totalmente Atendido'}</p>
+                </div>
+            );
+        } else if (evaluation.activityType === 'Campo') {
+            return (
+                <div className="space-y-2">
+                    <p><span className="font-semibold">Equipamento:</span> {evaluation.criteria.equipamento === 0 ? 'Falha' : 'OK'}</p>
+                    <p><span className="font-semibold">Checklist:</span> {evaluation.criteria.checklist === 0 ? 'Não Conforme' : 'Conforme'}</p>
+                </div>
+            );
+        }
+        return null;
+    };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-            <Card className="w-full max-w-lg my-8">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold">Detalhes da Avaliação</h2>
-                    <IconButton onClick={onClose}><X /></IconButton>
+        <Modal isOpen={isOpen} onClose={onClose} title="Detalhes da Avaliação">
+            <div className="space-y-4">
+                <p><span className="font-semibold">Colaborador:</span> {evaluation.collaboratorName}</p>
+                <p><span className="font-semibold">Tipo de Atividade:</span> {evaluation.activityType}</p>
+                {evaluation.activityType === 'Campo' && <p><span className="font-semibold">CS Name:</span> {evaluation.csName}</p>}
+                <p><span className="font-semibold">Período:</span> {evaluation.startDate} a {evaluation.endDate}</p>
+                <p><span className="font-semibold">Gerente/Admin:</span> {evaluation.managerName}</p>
+                <p><span className="font-semibold">Finalizada:</span> {evaluation.isFinalized ? 'Sim' : 'Não'}</p>
+                <div>
+                    <h4 className="font-semibold text-gray-700">Critérios:</h4>
+                    {renderCriteria()}
                 </div>
-                <div className="space-y-4 text-sm">
-                    <div className="p-3 bg-gray-50 rounded-md">
-                        <p><strong className="font-semibold text-gray-600">CS:</strong> {csName}</p>
-                        <p><strong className="font-semibold text-gray-600">Tipo:</strong> {activityType}</p>
-                        <p><strong className="font-semibold text-gray-600">Período:</strong> {new Date(startDate + 'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(endDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                        <p><strong className="font-semibold text-gray-600">Gestor:</strong> {managerName || 'N/A'}</p>
-                    </div>
-
-                    <div>
-                        <h3 className="font-semibold text-gray-800 mb-2">Critérios Avaliados</h3>
-                        <div className="space-y-2">
-                            {Object.entries(criteria).map(([key, value]) => (
-                                <div key={key} className={`flex items-center justify-between p-2 rounded-md ${value === 1 ? 'bg-green-50' : 'bg-red-50'}`}>
-                                    <span className="capitalize font-medium text-gray-800">{key.replace('equipamento', 'equip./veículo')}</span>
-                                    {value === 1 ? (
-                                        <span className="flex items-center gap-2 font-semibold text-green-700"><CheckCircle2 size={16} /> Sim</span>
-                                    ) : (
-                                        <span className="flex items-center gap-2 font-semibold text-red-700"><XCircle size={16} /> Não</span>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {observation && (
-                        <div>
-                            <h3 className="font-semibold text-gray-800 mb-2">Observação</h3>
-                            <p className="p-3 bg-gray-50 rounded-md text-gray-700 whitespace-pre-wrap">{observation}</p>
-                        </div>
-                    )}
-                    
-                    <div className="flex justify-end pt-4">
-                        <Button variant="secondary" onClick={onClose}>Fechar</Button>
-                    </div>
-                </div>
-            </Card>
-        </div>
+                <p><span className="font-semibold">Observação:</span> {evaluation.observation || 'Nenhuma'}</p>
+                <p className="text-sm text-gray-500">Criado em: {new Date(evaluation.createdAt).toLocaleDateString('pt-BR')} às {new Date(evaluation.createdAt).toLocaleTimeString('pt-BR')}</p>
+            </div>
+        </Modal>
     );
 }
 
 function CollaboratorModal({ isOpen, onClose, initialData }) {
     const { handleSaveCollaborator } = useContext(AppContext);
-    const [formData, setFormData] = useState(null);
-    const [error, setError] = useState('');
+    const [formData, setFormData] = useState({
+        name: '',
+        team: '',
+    });
 
-    useEffect(() => { 
-        setFormData(initialData ? { ...initialData } : { name: '', team: 'Projetos' }); 
+    useEffect(() => {
+        if (initialData) {
+            setFormData(initialData);
+        } else {
+            setFormData({ name: '', team: '' });
+        }
     }, [initialData]);
-    
+
     const handleChange = (field, value) => {
         setFormData(f => ({ ...f, [field]: value }));
-        setError('');
     };
 
-    const handleSave = () => { 
-        if (!formData.name.trim()) {
-            setError('O nome é obrigatório.');
-            return;
-        }
-        handleSaveCollaborator(formData);
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        await handleSaveCollaborator(formData);
         onClose();
     };
 
-    if (!isOpen || !formData) return null;
-
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <Card className="w-full max-w-md">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold">{initialData ? 'Editar' : 'Adicionar'} Colaborador</h2>
-                    <IconButton onClick={onClose}><X /></IconButton>
+        <Modal isOpen={isOpen} onClose={onClose} title={initialData ? 'Editar Colaborador' : 'Adicionar Novo Colaborador'}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Nome</label>
+                    <input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
                 </div>
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Nome Completo</label>
-                        <input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : 'border-gray-300'}`} />
-                        {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Equipe</label>
-                        <select value={formData.team} onChange={e => handleChange('team', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
-                            <option>Projetos</option>
-                            <option>Laudos</option>
-                            <option>Estudos</option>
-                            <option>Automação</option>
-                            <option>Campo</option>
-                        </select>
-                    </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Equipe</label>
+                    <input type="text" value={formData.team} onChange={e => handleChange('team', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
                 </div>
-                <div className="flex justify-end gap-3 mt-8">
-                    <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-                    <Button variant="primary" onClick={handleSave}><Save size={16}/> Salvar Colaborador</Button>
+                <div className="flex justify-end gap-3 mt-6">
+                    <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+                    <Button type="submit"><Save size={16} /> Salvar Colaborador</Button>
                 </div>
-            </Card>
-        </div>
+            </form>
+        </Modal>
     );
 }
 
 function AccessControlModal({ isOpen, onClose, initialData }) {
-    const { handleSaveSystemUser, allCollaborators, users, handleSendPasswordReset } = useContext(AppContext);
-    const [formData, setFormData] = useState(null);
+    const { handleSaveSystemUser, allCollaborators, handleSendPasswordReset } = useContext(AppContext);
+    const [formData, setFormData] = useState({
+        name: '',
+        email: '',
+        role: 'collaborator',
+        team: '',
+        collaboratorId: '',
+        password: ''
+    });
 
     useEffect(() => {
-        setFormData(initialData 
-            ? { ...initialData, team: initialData.team ? (Array.isArray(initialData.team) ? initialData.team : [initialData.team]) : [] } 
-            : { name: '', email: '', password: '', role: 'manager', team: ['Projetos'], collaboratorId: '' }
-        );
+        if (initialData) {
+            setFormData({ ...initialData, password: '' }); // Limpar senha ao editar
+        } else {
+            setFormData({ name: '', email: '', role: 'collaborator', team: '', collaboratorId: '', password: '' });
+        }
     }, [initialData]);
 
-    const handleChange = (field, value) => setFormData(f => ({ ...f, [field]: value }));
-    
-    const handleTeamToggle = (teamName) => {
-        setFormData(f => {
-            const currentTeams = f.team || [];
-            const isSelected = currentTeams.includes(teamName);
-            return isSelected 
-                ? { ...f, team: currentTeams.filter(t => t !== teamName) }
-                : { ...f, team: [...currentTeams, teamName] };
-        });
+    const handleChange = (field, value) => {
+        setFormData(f => ({ ...f, [field]: value }));
     };
-    
-    const handleSave = () => {
-        if (formData.role === 'collaborator' && !formData.collaboratorId) {
-            alert('Por favor, vincule um colaborador a esta conta de usuário.');
-            return;
-        }
-        handleSaveSystemUser(formData);
-        onClose();
-    };
-    
-    const unlinkedCollaborators = useMemo(() => {
-        const linkedCollaboratorIds = users.map(u => u.collaboratorId).filter(Boolean);
-        return allCollaborators.filter(c => !linkedCollaboratorIds.includes(c.id));
-    }, [allCollaborators, users]);
-
-    if (!isOpen || !formData) return null;
-
-    const teams = ['Projetos', 'Laudos', 'Estudos', 'Automação', 'Campo'];
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <Card className="w-full max-w-md">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold">{initialData ? 'Editar' : 'Adicionar'} Usuário do Sistema</h2>
-                    <IconButton onClick={onClose}><X /></IconButton>
-                </div>
-                <div className="space-y-4">
-                    <div><label className="block text-sm font-medium">Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
-                    <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData} /></div>
-                    
-                    {initialData ? (
-                        <div>
-                            <label className="block text-sm font-medium">Senha</label>
-                            <Button className="w-full mt-1" variant="secondary" onClick={() => handleSendPasswordReset(formData.email)}>
-                                Enviar E-mail de Redefinição de Senha
-                            </Button>
-                        </div>
-                    ) : (
-                        <div><label className="block text-sm font-medium">Senha Inicial</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
-                    )}
-
-                    <div>
-                        <label className="block text-sm font-medium">Função</label>
-                        <select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
-                            <option value="manager">Gestor</option>
-                            <option value="gerente">Gerente</option>
-                            <option value="collaborator">Colaborador</option>
-                            <option value="admin">Administrador</option>
-                            <option value="financeiro">Financeiro</option>
-                        </select>
-                    </div>
-                    
-                    {formData.role === 'collaborator' && (
-                        <div>
-                            <label className="block text-sm font-medium">Vincular ao Colaborador</label>
-                            <select value={formData.collaboratorId || ''} onChange={e => handleChange('collaboratorId', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
-                                <option value="">Selecione um colaborador</option>
-                                {initialData && initialData.collaboratorId &&
-                                    <option value={initialData.collaboratorId}>
-                                        {allCollaborators.find(c => c.id === initialData.collaboratorId)?.name}
-                                    </option>
-                                }
-                                {unlinkedCollaborators.map(c => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    {formData.role === 'manager' && (
-                        <div>
-                            <label className="block text-sm font-medium mb-2">Equipes (selecione uma ou mais)</label>
-                            <div className="space-y-2 p-3 bg-gray-50 rounded-md max-h-40 overflow-y-auto">
-                                {teams.map(team => (
-                                    <label key={team} className="flex items-center space-x-2 cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={formData.team.includes(team)}
-                                            onChange={() => handleTeamToggle(team)}
-                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700">{team}</span>
-                                    </label>
-                                ))}
-                            </div>
-                            {formData.team.length === 0 && (
-                                <p className="text-red-500 text-xs mt-1">Selecione pelo menos uma equipe.</p>
-                            )}
-                        </div>
-                    )}
-                </div>
-                <div className="flex justify-end gap-3 mt-8">
-                    <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-                    <Button variant="primary" onClick={handleSave} disabled={formData.role === 'manager' && formData.team.length === 0}><Save size={16}/> Salvar</Button>
-                </div>
-            </Card>
-        </div>
-    );
-}
-
-// --- MÓDULO DE VISUALIZAÇÃO DO COLABORADOR ---
-function CollaboratorViewModule() {
-    const { currentUser, allCollaborators, evaluations } = useContext(AppContext);
-    const [currentDate, setCurrentDate] = useState(new Date());
-    const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-    const [selectedEvaluation, setSelectedEvaluation] = useState(null);
-
-    const collaborator = useMemo(() => {
-        if (!currentUser || !currentUser.collaboratorId) return null;
-        return allCollaborators.find(c => c.id === currentUser.collaboratorId);
-    }, [currentUser, allCollaborators]);
-
-    const handleViewDetails = (evaluation) => {
-        setSelectedEvaluation(evaluation);
-        setIsDetailModalOpen(true);
-    };
-    
-    if (!collaborator) {
-        return <Card><p>Dados do colaborador não encontrados. Verifique se seu usuário está vinculado a um registro de colaborador no Controle de Acesso.</p></Card>
-    }
-
-    return (
-        <>
-            <div className="space-y-6">
-                <Card>
-                    <h2 className="text-2xl font-bold mb-4">Meus Dados - {collaborator.name}</h2>
-                    <ResultsDashboard collaboratorId={collaborator.id} currentDate={currentDate} />
-                </Card>
-                
-                <Card>
-                     <h3 className="text-xl font-bold mb-4">Minhas Avaliações</h3>
-                     <CalendarView 
-                        collaboratorId={collaborator.id} 
-                        currentDate={currentDate}
-                        setCurrentDate={setCurrentDate}
-                        isReadOnly={true} 
-                        onViewEvaluationDetails={handleViewDetails}
-                    />
-                </Card>
-            </div>
-            {isDetailModalOpen && (
-                <EvaluationDetailModal
-                    isOpen={isDetailModalOpen}
-                    onClose={() => setIsDetailModalOpen(false)}
-                    evaluationData={selectedEvaluation}
-                />
-            )}
-        </>
-    );
-}
-
-
-// --- MÓDULO FINANCEIRO ---
-function FinancialModule() {
-    const { allCollaborators, evaluations, businessDays } = useContext(AppContext);
-    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-    const [paymentStatus, setPaymentStatus] = useState({});
-    
-    const monthlyFinancialData = useMemo(() => {
-        const data = allCollaborators.map(collaborator => {
-            const bonusData = calculateMonthlyBonus(collaborator.id, evaluations, businessDays, selectedYear, selectedMonth);
-            return {
-                ...collaborator,
-                ...bonusData,
-                isPaid: paymentStatus[`${collaborator.id}-${selectedYear}-${selectedMonth}`] || false
-            };
-        });
-        
-        return data.sort((a, b) => a.name.localeCompare(b.name));
-    }, [allCollaborators, evaluations, businessDays, selectedYear, selectedMonth, paymentStatus]);
-
-    const annualSummary = useMemo(() => {
-        let totalPaidInYear = 0;
-        allCollaborators.forEach(collaborator => {
-            for (let month = 0; month <= 11; month++) {
-                const { totalBonus } = calculateMonthlyBonus(collaborator.id, evaluations, businessDays, selectedYear, month);
-                totalPaidInYear += totalBonus;
-            }
-        });
-
-        const currentMonth = new Date().getFullYear() === selectedYear ? new Date().getMonth() : 11;
-        const monthsPassed = currentMonth + 1;
-        const projectedAnnual = totalPaidInYear > 0 ? (totalPaidInYear / monthsPassed) * 12 : 0;
-        
-        return { totalPaidInYear, projectedAnnual };
-    }, [allCollaborators, evaluations, businessDays, selectedYear]);
-    
-    const teamSummary = useMemo(() => {
-        const teams = {};
-        monthlyFinancialData.forEach(collab => {
-            if (!teams[collab.team]) {
-                teams[collab.team] = { name: collab.team, totalAmount: 0 };
-            }
-            teams[collab.team].totalAmount += collab.totalBonus;
-        });
-        return Object.values(teams);
-    }, [monthlyFinancialData]);
-    
-    const handlePaymentToggle = (collaboratorId) => {
-        const key = `${collaboratorId}-${selectedYear}-${selectedMonth}`;
-        setPaymentStatus(prev => ({ ...prev, [key]: !prev[key] }));
-    };
-    
-    const totalMonthlyAmount = monthlyFinancialData.reduce((sum, collab) => sum + collab.totalBonus, 0);
-    
-    return (
-        <div className="space-y-6">
-            <Card>
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-2xl font-bold">Módulo Financeiro</h2>
-                    <div className="flex gap-2">
-                        <select 
-                            value={selectedMonth} 
-                            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
-                        >
-                            {Array.from({length: 12}, (_, i) => (
-                                <option key={i} value={i}>
-                                    {new Date(selectedYear, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
-                                </option>
-                            ))}
-                        </select>
-                        <select 
-                            value={selectedYear} 
-                            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
-                        >
-                            <option value={2024}>2024</option>
-                            <option value={2025}>2025</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-blue-800">Total do Mês</h3>
-                        <p className="text-2xl font-bold text-blue-600">R$ {totalMonthlyAmount.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-green-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-green-800">Total Pago no Ano</h3>
-                        <p className="text-2xl font-bold text-green-600">R$ {annualSummary.totalPaidInYear.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-purple-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-purple-800">Projeção Anual</h3>
-                        <p className="text-2xl font-bold text-purple-600">R$ {annualSummary.projectedAnnual.toFixed(2)}</p>
-                    </div>
-                </div>
-            </Card>
-            
-            <Card>
-                <h3 className="text-xl font-bold mb-4">Resumo por Equipe</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {teamSummary.map(team => (
-                        <div key={team.name} className="bg-yellow-50 p-4 rounded-lg border-2 border-yellow-200">
-                            <h4 className="font-bold text-yellow-800 mb-2">{team.name}</h4>
-                            <p className="text-lg font-semibold text-yellow-700">R$ {team.totalAmount.toFixed(2)}</p>
-                        </div>
-                    ))}
-                </div>
-            </Card>
-            
-            <Card>
-                <h3 className="text-xl font-bold mb-4">Detalhamento por Colaborador</h3>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b bg-gray-50">
-                                <th className="text-left p-3">Colaborador</th>
-                                <th className="text-left p-3">Equipe</th>
-                                <th className="text-right p-3">Bônus Escritório</th>
-                                <th className="text-right p-3">Bônus Campo</th>
-                                <th className="text-right p-3">Total</th>
-                                <th className="text-center p-3">Avaliações (E|C)</th>
-                                <th className="text-center p-3">Pagamento</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {monthlyFinancialData.map(collaborator => (
-                                <tr key={collaborator.id} className="border-b hover:bg-gray-50">
-                                    <td className="p-3 font-medium">{collaborator.name}</td>
-                                    <td className="p-3">
-                                        <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-semibold">
-                                            {collaborator.team}
-                                        </span>
-                                    </td>
-                                    <td className="p-3 text-right">R$ {collaborator.officeBonus.toFixed(2)}</td>
-                                    <td className="p-3 text-right">R$ {collaborator.fieldBonus.toFixed(2)}</td>
-                                    <td className="p-3 text-right font-bold">R$ {collaborator.totalBonus.toFixed(2)}</td>
-                                    <td className="p-3 text-center">
-                                        <span className="text-xs text-gray-600">
-                                            {collaborator.officeEvals} | {collaborator.fieldEvals}
-                                        </span>
-                                    </td>
-                                    <td className="p-3 text-center">
-                                        <Button
-                                            variant={collaborator.isPaid ? "secondary" : "primary"}
-                                            className="text-xs px-2 py-1"
-                                            onClick={() => handlePaymentToggle(collaborator.id)}
-                                        >
-                                            {collaborator.isPaid ? '✓ Pago' : 'Marcar Pago'}
-                                        </Button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                        <tfoot>
-                            <tr className="border-t-2 bg-gray-100 font-bold">
-                                <td colSpan="4" className="p-3 text-right">Total Geral do Mês:</td>
-                                <td className="p-3 text-right text-lg">R$ {totalMonthlyAmount.toFixed(2)}</td>
-                                <td colSpan="2" className="p-3"></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </Card>
-        </div>
-    );
-}
-
-// --- MÓDULO DE AUDITORIA ---
-function AuditModule() {
-    const { evaluations, users, allCollaborators, handleCreateNotification } = useContext(AppContext);
-    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-    const [selectedEvaluation, setSelectedEvaluation] = useState(null);
-    const [questionText, setQuestionText] = useState('');
-    const [showQuestionModal, setShowQuestionModal] = useState(false);
-    
-    const negativeEvaluations = useMemo(() => {
-        return evaluations.filter(evaluation => {
-            const evalDate = parseDate(evaluation.startDate);
-            const hasNegativeCriteria = Object.values(evaluation.criteria).some(value => value === 0);
-            
-            return evalDate.getFullYear() === selectedYear && 
-                   evalDate.getMonth() === selectedMonth &&
-                   hasNegativeCriteria;
-        }).sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
-    }, [evaluations, selectedYear, selectedMonth]);
-    
-    const handleQuestionManager = (evaluation) => {
-        setSelectedEvaluation(evaluation);
-        setQuestionText('');
-        setShowQuestionModal(true);
-    };
-    
-    const handleSendQuestion = async () => {
-        if (!selectedEvaluation || !questionText.trim()) return;
-        
-        const manager = users.find(u => u.id === selectedEvaluation.managerId || u.name === selectedEvaluation.managerName);
-        
-        if (manager) {
-            const collaboratorName = allCollaborators.find(c => c.id === selectedEvaluation.collaboratorId)?.name;
-            await handleCreateNotification(
-                manager.id,
-                'Questionamento de Auditoria',
-                `Sobre avaliação de ${collaboratorName} em ${new Date(selectedEvaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}: "${questionText}"`,
-                'warning'
-            );
-            
-            setShowQuestionModal(false);
-            setSelectedEvaluation(null);
-            setQuestionText('');
-            
-            alert('Questionamento enviado com sucesso!');
-        } else {
-            alert('Gestor não encontrado para envio da notificação.');
-        }
-    };
-    
-    const getCriteriaStatus = (criteria) => {
-        const total = Object.keys(criteria).length;
-        const negative = Object.values(criteria).filter(v => v === 0).length;
-        return { total, negative, positive: total - negative };
-    };
-    
-    return (
-        <div className="space-y-6">
-            <Card>
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-2xl font-bold">Auditoria de Avaliações</h2>
-                    <div className="flex gap-2">
-                        <select 
-                            value={selectedMonth} 
-                            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
-                        >
-                            {Array.from({length: 12}, (_, i) => (
-                                <option key={i} value={i}>
-                                    {new Date(2024, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
-                                </option>
-                            ))}
-                        </select>
-                        <select 
-                            value={selectedYear} 
-                            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
-                        >
-                            <option value={2024}>2024</option>
-                            <option value={2025}>2025</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-red-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-red-800">Avaliações com Problemas</h3>
-                        <p className="text-2xl font-bold text-red-600">{negativeEvaluations.length}</p>
-                    </div>
-                    <div className="bg-yellow-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-yellow-800">Colaboradores Afetados</h3>
-                        <p className="text-2xl font-bold text-yellow-600">
-                            {new Set(negativeEvaluations.map(e => e.collaboratorId)).size}
-                        </p>
-                    </div>
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-blue-800">Gestores Envolvidos</h3>
-                        <p className="text-2xl font-bold text-blue-600">
-                            {new Set(negativeEvaluations.map(e => e.managerName)).size}
-                        </p>
-                    </div>
-                </div>
-            </Card>
-            
-            <Card>
-                <h3 className="text-xl font-bold mb-4">Avaliações com Critérios Negativos</h3>
-                {negativeEvaluations.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                        <AlertTriangle size={48} className="mx-auto mb-4 text-gray-300" />
-                        <p>Nenhuma avaliação com critérios negativos encontrada neste período.</p>
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {negativeEvaluations.map(evaluation => {
-                            const criteriaStatus = getCriteriaStatus(evaluation.criteria);
-                            const collaboratorName = allCollaborators.find(c => c.id === evaluation.collaboratorId)?.name || 'Desconhecido';
-                            return (
-                                <div key={evaluation.id} className="border rounded-lg p-4 bg-red-50 border-red-200">
-                                    <div className="flex justify-between items-start mb-3">
-                                        <div>
-                                            <h4 className="font-bold text-lg">{collaboratorName}</h4>
-                                            <p className="text-sm text-gray-600">
-                                                {evaluation.activityType} - {new Date(evaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}
-                                            </p>
-                                            <p className="text-sm text-gray-600">
-                                                Avaliado por: {evaluation.managerName || 'Não informado'}
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="flex gap-2 mb-2">
-                                                <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-semibold">
-                                                    {criteriaStatus.negative} Não
-                                                </span>
-                                                <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">
-                                                    {criteriaStatus.positive} Sim
-                                                </span>
-                                            </div>
-                                            <Button
-                                                variant="primary"
-                                                className="text-xs"
-                                                onClick={() => handleQuestionManager(evaluation)}
-                                            >
-                                                <AlertTriangle size={12} /> Questionar
-                                            </Button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                        {Object.entries(evaluation.criteria).map(([criterion, value]) => (
-                                            <div key={criterion} className={`p-2 rounded text-xs font-medium ${value === 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                <span className="block font-semibold">{criterion}</span>
-                                                <span>{value === 1 ? 'Sim' : 'Não'}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    
-                                    {evaluation.observation && (
-                                        <div className="mt-3 p-2 bg-gray-100 rounded">
-                                            <p className="text-sm"><strong>Observação:</strong> {evaluation.observation}</p>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </Card>
-            
-            <Card>
-                <h3 className="text-xl font-bold mb-4">Resumo por Gestor</h3>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b bg-gray-50">
-                                <th className="text-left p-3">Gestor</th>
-                                <th className="text-center p-3">Avaliações com Problemas</th>
-                                <th className="text-center p-3">Colaboradores Afetados</th>
-                                <th className="text-center p-3">Taxa de Problemas</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {Object.entries(
-                                negativeEvaluations.reduce((acc, evaluation) => {
-                                    const manager = evaluation.managerName || 'Não informado';
-                                    if (!acc[manager]) {
-                                        acc[manager] = {
-                                            name: manager,
-                                            problemEvaluations: 0,
-                                            totalEvaluations: 0,
-                                            collaborators: new Set()
-                                        };
-                                    }
-                                    acc[manager].problemEvaluations++;
-                                    acc[manager].collaborators.add(evaluation.collaboratorId);
-                                    return acc;
-                                }, {})
-                            ).map(([managerName, data]) => {
-                                const totalEvaluations = evaluations.filter(e => {
-                                    const evalDate = parseDate(e.startDate);
-                                    return evalDate.getFullYear() === selectedYear && 
-                                           evalDate.getMonth() === selectedMonth &&
-                                           e.managerName === managerName;
-                                }).length;
-                                
-                                const problemRate = totalEvaluations > 0 ? (data.problemEvaluations / totalEvaluations * 100) : 0;
-                                
-                                return (
-                                    <tr key={managerName} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 font-medium">{managerName}</td>
-                                        <td className="p-3 text-center">{data.problemEvaluations}</td>
-                                        <td className="p-3 text-center">{data.collaborators.size}</td>
-                                        <td className="p-3 text-center">
-                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${problemRate > 20 ? 'bg-red-100 text-red-800' : problemRate > 10 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
-                                                {problemRate.toFixed(1)}%
-                                            </span>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </Card>
-            
-            {showQuestionModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <Card className="w-full max-w-md">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold">Questionar Gestor</h3>
-                            <IconButton onClick={() => setShowQuestionModal(false)}>
-                                <X />
-                            </IconButton>
-                        </div>
-                        
-                        {selectedEvaluation && (
-                            <div className="mb-4 p-3 bg-gray-50 rounded">
-                                <p className="font-medium">{allCollaborators.find(c => c.id === selectedEvaluation.collaboratorId)?.name}</p>
-                                <p className="text-sm text-gray-600">
-                                    {selectedEvaluation.activityType} - {new Date(selectedEvaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}
-                                </p>
-                                <p className="text-sm text-gray-600">
-                                    Gestor: {selectedEvaluation.managerName}
-                                </p>
-                            </div>
-                        )}
-                        
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium mb-2">Questionamento:</label>
-                            <textarea
-                                value={questionText}
-                                onChange={(e) => setQuestionText(e.target.value)}
-                                className="w-full p-3 border rounded-md h-24 resize-none"
-                                placeholder="Digite seu questionamento sobre esta avaliação..."
-                            />
-                        </div>
-                        
-                        <div className="flex justify-end gap-2">
-                            <Button variant="secondary" onClick={() => setShowQuestionModal(false)}>
-                                Cancelar
-                            </Button>
-                            <Button 
-                                variant="primary" 
-                                onClick={handleSendQuestion}
-                                disabled={!questionText.trim()}
-                            >
-                                Enviar Questionamento
-                            </Button>
-                        </div>
-                    </Card>
-                </div>
-            )}
-        </div>
-    );
-}
-
-// NOVO: Modal para forçar a troca de senha
-function ForcePasswordChangeModal() {
-    const { handleChangePassword } = useContext(AppContext);
-    const [newPassword, setNewPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [error, setError] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (newPassword.length < 6) {
-            setError("A nova senha deve ter pelo menos 6 caracteres.");
-            return;
-        }
-        if (newPassword !== confirmPassword) {
-            setError("As senhas não coincidem.");
-            return;
-        }
-        setError('');
-        setIsLoading(true);
-        const result = await handleChangePassword(newPassword);
-        if (!result.success) {
-            setError(result.message);
-            setIsLoading(false);
-        }
-        // Em caso de sucesso, o AppProvider vai recarregar e remover este modal.
+        await handleSaveSystemUser(formData);
+        onClose();
     };
-    
+
     return (
-        <div className="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 z-[100]">
-            <Card className="w-full max-w-md">
-                <h2 className="text-2xl font-bold text-center mb-2">Alterar Senha</h2>
-                <p className="text-center text-gray-600 mb-6">Este é seu primeiro acesso. Por segurança, por favor, crie uma nova senha.</p>
-                <form onSubmit={handleSubmit} className="space-y-4">
+        <Modal isOpen={isOpen} onClose={onClose} title={initialData ? 'Editar Usuário do Sistema' : 'Adicionar Novo Usuário do Sistema'}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Nome</label>
+                    <input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Função</label>
+                    <select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                        <option value="collaborator">Colaborador</option>
+                        <option value="manager">Gestor</option>
+                        <option value="financeiro">Financeiro</option>
+                        <option value="gerente">Gerente</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                {(formData.role === 'manager' || formData.role === 'gerente') && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Nova Senha</label>
+                        <label className="block text-sm font-medium text-gray-700">Equipe (separar por vírgula se mais de uma)</label>
+                        <input type="text" value={formData.team} onChange={e => handleChange('team', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" placeholder="Ex: Vendas, Suporte" />
+                    </div>
+                )}
+                {formData.role === 'collaborator' && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Colaborador Associado</label>
+                        <select value={formData.collaboratorId} onChange={e => handleChange('collaboratorId', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required>
+                            <option value="">Selecione um colaborador</option>
+                            {allCollaborators.map(collab => (
+                                <option key={collab.id} value={collab.id}>{collab.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+                {/* NOVO: Campo de senha para admin */}
+                {initialData ? (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Nova Senha (Opcional)</label>
                         <input 
                             type="password" 
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                            className="mt-1 block w-full p-3 border border-gray-300 rounded-md shadow-sm" 
-                            required 
+                            placeholder="Deixe em branco para não alterar"
+                            onChange={e => handleChange('password', e.target.value)} 
+                            className="mt-1 block w-full p-2 border rounded-md" 
                         />
+                        <Button className="w-full mt-2" variant="secondary" onClick={() => handleSendPasswordReset(formData.email)}>
+                            Ou Enviar E-mail de Redefinição
+                        </Button>
                     </div>
+                ) : (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Confirmar Nova Senha</label>
-                        <input 
-                            type="password" 
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            className="mt-1 block w-full p-3 border border-gray-300 rounded-md shadow-sm" 
-                            required 
-                        />
+                        <label className="block text-sm font-medium text-gray-700">Senha Inicial</label>
+                        <input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
                     </div>
-                     {error && <p className="text-sm text-red-600 text-center">{error}</p>}
-                    <Button type="submit" className="w-full" disabled={isLoading}>
-                        {isLoading ? "Salvando..." : "Salvar Nova Senha"}
-                    </Button>
-                </form>
-            </Card>
+                )}
+
+                <div className="flex justify-end gap-3 mt-6">
+                    <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+                    <Button type="submit"><Save size={16} /> Salvar Usuário</Button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
+function ConfirmationModal({ isOpen, onClose, onConfirm, title, message }) {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md transform transition-all scale-100 opacity-100">
+                <div className="flex justify-between items-center p-4 border-b">
+                    <h2 className="text-xl font-bold text-gray-800">{title}</h2>
+                    <IconButton onClick={onClose}><X size={20} /></IconButton>
+                </div>
+                <div className="p-6 space-y-4">
+                    <p className="text-gray-700">{message}</p>
+                    <div className="flex justify-end gap-3">
+                        <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+                        <Button type="button" variant="danger" onClick={onConfirm}>Confirmar</Button>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
+
+function ForcePasswordChangeModal() {
+    const { handleChangePassword, handleLogout } = useContext(AppContext);
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        setSuccess(false);
+
+        if (newPassword.length < 6) {
+            setError('A senha deve ter no mínimo 6 caracteres.');
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setError('As senhas não coincidem.');
+            return;
+        }
+
+        const result = await handleChangePassword(newPassword);
+        if (result.success) {
+            setSuccess(true);
+        } else {
+            setError(result.message);
+        }
+    };
+
+    return (
+        <Modal isOpen={true} onClose={() => {}} title="Alterar Senha Obrigatória">
+            <div className="space-y-4">
+                <p className="text-red-600 font-semibold flex items-center gap-2"><AlertTriangle size={20} /> Sua senha precisa ser alterada para continuar.</p>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Nova Senha</label>
+                        <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Confirmar Nova Senha</label>
+                        <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="mt-1 block w-full p-2 border rounded-md" required />
+                    </div>
+                    {error && <p className="text-red-500 text-sm">{error}</p>}
+                    {success && <p className="text-green-500 text-sm">Senha alterada com sucesso! Você será redirecionado.</p>}
+                    <div className="flex justify-end gap-3">
+                        <Button type="button" variant="secondary" onClick={handleLogout}>Sair</Button>
+                        <Button type="submit" disabled={success}>Alterar Senha</Button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
+    );
+}
+
