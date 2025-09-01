@@ -55,11 +55,13 @@ const IconButton = ({ children, onClick }) => <button onClick={onClick} classNam
 
 // --- LÓGICA DE CÁLCULO DE BÔNUS (HELPER) ---
 const calculateMonthlyBonus = (collaboratorId, allEvaluations, businessDays, year, month) => {
+    // ALTERAÇÃO 3: Apenas avaliações finalizadas (isFinalized não é false) entram no cálculo.
     const myEvals = allEvaluations.filter(e => {
         const evalDate = parseDate(e.startDate);
         return e.collaboratorId === collaboratorId &&
                evalDate.getFullYear() === year &&
-               evalDate.getMonth() === month;
+               evalDate.getMonth() === month &&
+               e.isFinalized !== false; // Considera 'true' ou 'undefined' (para dados antigos)
     });
 
     let officeDaysWorked = 0;
@@ -99,6 +101,9 @@ const calculateMonthlyBonus = (collaboratorId, allEvaluations, businessDays, yea
     if (hasEquipmentFailureInMonth) {
         fieldBonus = 0;
     }
+    
+    // ALTERAÇÃO 2: Limita o bônus de campo a um máximo de R$ 200.
+    fieldBonus = Math.min(fieldBonus, 200);
 
     return { officeBonus, fieldBonus, totalBonus: officeBonus + fieldBonus, officeDaysWorked, totalBusinessDays, officeEvals: officeEvals.length, fieldEvals: fieldEvals.length };
 };
@@ -194,7 +199,8 @@ const AppProvider = ({ children }) => {
         return [];
     }, [userProfile, collaborators]);
     
-    const handleSaveSystemUser = async (user) => {
+    // ALTERAÇÃO 1: Lógica para salvar usuário do sistema, incluindo a atualização de senha por admin
+    const handleSaveSystemUser = async (user, newPassword) => {
         try {
             const userData = {
                 name: user.name,
@@ -204,17 +210,31 @@ const AppProvider = ({ children }) => {
                 collaboratorId: user.role === 'collaborator' ? user.collaboratorId : null,
             };
 
-            if (user.id) {
+            if (user.id) { // Editando usuário existente
                 const userRef = doc(db, usersCollectionPath, user.id);
                 await updateDoc(userRef, userData);
-            } else {
+                if (newPassword) {
+                    // ATENÇÃO: A funcionalidade de um admin resetar a senha de outro usuário
+                    // requer uma Cloud Function no Firebase com privilégios de admin.
+                    // O código abaixo é um EXEMPLO de como você chamaria essa função.
+                    // Ele NÃO vai funcionar sem a criação da respectiva Cloud Function.
+                    console.warn("Tentativa de alterar senha. Isso requer uma Cloud Function 'updateUserPassword'.");
+                    alert("A interface para alterar a senha foi implementada, mas a funcionalidade requer uma configuração adicional no backend do Firebase (Cloud Function) para funcionar.");
+                    // Exemplo de como seria a chamada para a Cloud Function:
+                    // const updateUserPassword = httpsCallable(functions, 'updateUserPassword');
+                    // await updateUserPassword({ uid: user.id, password: newPassword });
+                }
+            } else { // Criando novo usuário
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
-                userData.uid = userCredential.user.uid;
-                userData.requiresPasswordChange = true; // Forçar troca de senha no primeiro login
-                await setDoc(doc(db, usersCollectionPath, userCredential.user.uid), userData);
+                const uid = userCredential.user.uid;
+                await setDoc(doc(db, usersCollectionPath, uid), {
+                    ...userData,
+                    uid: uid,
+                    requiresPasswordChange: true, // Forçar troca de senha no primeiro login
+                });
             }
         } catch (error) {
-            console.error("Erro ao salvar utilizador do sistema:", error);
+            console.error("Erro ao salvar usuário do sistema:", error);
             alert("Erro ao salvar usuário: " + error.message);
         }
     };
@@ -311,7 +331,7 @@ const AppProvider = ({ children }) => {
                 ...evalData,
                 managerName: userProfile?.name || 'Desconhecido',
                 managerId: userProfile?.id || null,
-                createdAt: new Date().toISOString()
+                createdAt: initialData ? evalData.createdAt : new Date().toISOString()
             };
             
             if (id) {
@@ -502,7 +522,7 @@ function AppContent() {
 
     const isCalendarReadOnly = currentUser.role === 'financeiro';
     const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
-    const canLaunchAssessments = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
+    const canLaunchAssessments = ['admin', 'manager', 'gerente'].includes(currentUser.role);
 
     return (
         <div className="bg-gray-50 min-h-screen font-sans text-gray-800">
@@ -1053,22 +1073,34 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                                 <span className="absolute top-1 right-1 text-red-500 font-bold text-lg">X</span>
                             )}
                             <div className="mt-1 space-y-1 text-xs text-left">
-                                {dayEvaluations.map(e => (
-                                    <div 
-                                        key={e.id} 
-                                        className={`p-1 rounded truncate relative group ${onViewEvaluationDetails ? 'cursor-pointer' : ''}`}
-                                        style={{backgroundColor: e.activityType === 'Escritório' ? '#dcfce7' : '#ffedd5', color: e.activityType === 'Escritório' ? '#166534' : '#9a3412'}}
-                                        onClick={onViewEvaluationDetails ? (evt) => { evt.stopPropagation(); onViewEvaluationDetails(e); } : undefined}
-                                    >
-                                        {e.csName}
-                                        {!isReadOnly && (
-                                            <div className="absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 bg-white/70 backdrop-blur-sm rounded-full px-1">
-                                                <IconButton onClick={(evt) => {evt.stopPropagation(); onLaunchEvalModal(e, null, collaboratorId)}}><Edit size={12}/></IconButton>
-                                                <IconButton onClick={(evt) => {evt.stopPropagation(); handleDeleteEvaluation(e.id)}}><Trash2 size={12}/></IconButton>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
+                                {dayEvaluations.map(e => {
+                                    // ALTERAÇÃO 3: Define a cor com base no status 'isFinalized'
+                                    const isFinalized = e.isFinalized !== false;
+                                    let colorClasses = '';
+                                    if (!isFinalized) {
+                                        colorClasses = 'bg-red-600 text-white';
+                                    } else if (e.activityType === 'Escritório') {
+                                        colorClasses = 'bg-green-100 text-green-800';
+                                    } else {
+                                        colorClasses = 'bg-orange-100 text-orange-800';
+                                    }
+
+                                    return (
+                                        <div 
+                                            key={e.id} 
+                                            className={`p-1 rounded truncate relative group ${colorClasses} ${onViewEvaluationDetails ? 'cursor-pointer' : ''}`}
+                                            onClick={onViewEvaluationDetails ? (evt) => { evt.stopPropagation(); onViewEvaluationDetails(e); } : undefined}
+                                        >
+                                            {e.csName}
+                                            {!isReadOnly && (
+                                                <div className="absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 bg-white/70 backdrop-blur-sm rounded-full px-1">
+                                                    <IconButton onClick={(evt) => {evt.stopPropagation(); onLaunchEvalModal(e, null, collaboratorId)}}><Edit size={12}/></IconButton>
+                                                    <IconButton onClick={(evt) => {evt.stopPropagation(); handleDeleteEvaluation(e.id)}}><Trash2 size={12}/></IconButton>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     )
@@ -1143,9 +1175,11 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
             csName: "",
             observation: "",
             criteria: { prazo: 1, qualidade: 1, apontamento: 1 },
-            collaboratorId: collaboratorId
+            collaboratorId: collaboratorId,
+            isFinalized: false, // ALTERAÇÃO 3: Valor padrão para nova avaliação
         };
-        const dataToEdit = initialData ? { ...initialData } : defaultData;
+        // ALTERAÇÃO 3: Garante que o estado 'isFinalized' seja carregado, com fallback para 'false'
+        const dataToEdit = initialData ? { ...initialData, isFinalized: initialData.isFinalized ?? false } : defaultData;
         setFormData(dataToEdit);
     }, [initialData, dateRange, collaboratorId]);
 
@@ -1197,7 +1231,22 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
                          </div>
                      </div>
                      <div><label className="block text-sm font-medium text-gray-700">Observação (Opcional)</label><textarea value={formData.observation} onChange={e => setFormData(f => ({...f, observation: e.target.value}))} rows="2" className="mt-1 block w-full p-2 border rounded-md"></textarea></div>
-                     <div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancelar</Button><Button variant="primary" onClick={handleSave}><Save size={16}/> Salvar</Button></div>
+                    {/* ALTERAÇÃO 3: Adição do checkbox 'Avaliação Finalizada' */}
+                    <div className="mt-4 p-3 bg-blue-50 border-l-4 border-blue-400">
+                        <label className="flex items-center space-x-3 cursor-pointer">
+                            <input 
+                                type="checkbox"
+                                checked={formData.isFinalized}
+                                onChange={e => setFormData(f => ({ ...f, isFinalized: e.target.checked }))}
+                                className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="font-semibold text-gray-800">Avaliação Finalizada</span>
+                        </label>
+                        <p className="text-xs text-gray-600 mt-1">
+                            Marque esta caixa para que a avaliação seja incluída no cálculo final do bônus.
+                        </p>
+                    </div>
+                     <div className="flex justify-end gap-3 pt-4"><Button variant="secondary" onClick={onClose}>Cancelar</Button><Button variant="primary" onClick={handleSave}><Save size={16}/> Salvar</Button></div>
                  </div>
              </Card>
          </div>
@@ -1315,14 +1364,18 @@ function CollaboratorModal({ isOpen, onClose, initialData }) {
 }
 
 function AccessControlModal({ isOpen, onClose, initialData }) {
-    const { handleSaveSystemUser, allCollaborators, users, handleSendPasswordReset } = useContext(AppContext);
+    const { handleSaveSystemUser, allCollaborators, users } = useContext(AppContext);
     const [formData, setFormData] = useState(null);
+    // ALTERAÇÃO 1: Adicionado estado para a nova senha
+    const [newPassword, setNewPassword] = useState('');
 
     useEffect(() => {
         setFormData(initialData 
             ? { ...initialData, team: initialData.team ? (Array.isArray(initialData.team) ? initialData.team : [initialData.team]) : [] } 
             : { name: '', email: '', password: '', role: 'manager', team: ['Projetos'], collaboratorId: '' }
         );
+        // Reseta o campo de nova senha ao abrir o modal
+        setNewPassword('');
     }, [initialData]);
 
     const handleChange = (field, value) => setFormData(f => ({ ...f, [field]: value }));
@@ -1342,7 +1395,8 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
             alert('Por favor, vincule um colaborador a esta conta de usuário.');
             return;
         }
-        handleSaveSystemUser(formData);
+        // ALTERAÇÃO 1: Passa a nova senha (se houver) para a função de salvar
+        handleSaveSystemUser(formData, newPassword);
         onClose();
     };
     
@@ -1356,8 +1410,8 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
     const teams = ['Projetos', 'Laudos', 'Estudos', 'Automação', 'Campo'];
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <Card className="w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <Card className="w-full max-w-md my-8">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-bold">{initialData ? 'Editar' : 'Adicionar'} Usuário do Sistema</h2>
                     <IconButton onClick={onClose}><X /></IconButton>
@@ -1366,15 +1420,28 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     <div><label className="block text-sm font-medium">Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
                     <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData} /></div>
                     
+                    {/* ALTERAÇÃO 1: Lógica para exibir campo de senha em modo de edição ou criação */}
                     {initialData ? (
                         <div>
-                            <label className="block text-sm font-medium">Senha</label>
-                            <Button className="w-full mt-1" variant="secondary" onClick={() => handleSendPasswordReset(formData.email)}>
-                                Enviar E-mail de Redefinição de Senha
-                            </Button>
+                            <label className="block text-sm font-medium">Redefinir Senha (Opcional)</label>
+                            <input 
+                                type="password" 
+                                value={newPassword}
+                                onChange={e => setNewPassword(e.target.value)}
+                                className="mt-1 block w-full p-2 border rounded-md" 
+                                placeholder="Deixe em branco para não alterar"
+                            />
                         </div>
                     ) : (
-                        <div><label className="block text-sm font-medium">Senha Inicial</label><input type="password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
+                        <div>
+                            <label className="block text-sm font-medium">Senha Inicial</label>
+                            <input 
+                                type="password" 
+                                value={formData.password}
+                                onChange={e => handleChange('password', e.target.value)}
+                                className="mt-1 block w-full p-2 border rounded-md" 
+                            />
+                        </div>
                     )}
 
                     <div>
@@ -1413,7 +1480,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                                     <label key={team} className="flex items-center space-x-2 cursor-pointer">
                                         <input 
                                             type="checkbox" 
-                                            checked={formData.team.includes(team)}
+                                            checked={(formData.team || []).includes(team)}
                                             onChange={() => handleTeamToggle(team)}
                                             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                         />
@@ -1421,7 +1488,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                                     </label>
                                 ))}
                             </div>
-                            {formData.team.length === 0 && (
+                            {(formData.team || []).length === 0 && (
                                 <p className="text-red-500 text-xs mt-1">Selecione pelo menos uma equipe.</p>
                             )}
                         </div>
@@ -1429,7 +1496,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                 </div>
                 <div className="flex justify-end gap-3 mt-8">
                     <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-                    <Button variant="primary" onClick={handleSave} disabled={formData.role === 'manager' && formData.team.length === 0}><Save size={16}/> Salvar</Button>
+                    <Button variant="primary" onClick={handleSave} disabled={formData.role === 'manager' && (formData.team || []).length === 0}><Save size={16}/> Salvar</Button>
                 </div>
             </Card>
         </div>
@@ -1931,7 +1998,6 @@ function AuditModule() {
     );
 }
 
-// NOVO: Modal para forçar a troca de senha
 function ForcePasswordChangeModal() {
     const { handleChangePassword } = useContext(AppContext);
     const [newPassword, setNewPassword] = useState('');
@@ -1956,7 +2022,6 @@ function ForcePasswordChangeModal() {
             setError(result.message);
             setIsLoading(false);
         }
-        // Em caso de sucesso, o AppProvider vai recarregar e remover este modal.
     };
     
     return (
