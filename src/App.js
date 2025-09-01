@@ -83,6 +83,9 @@ const calculateMonthlyBonus = (collaboratorId, allEvaluations, businessDays, yea
     const officePerformancePercentage = officePossiblePoints > 0 ? (officeObtainedPoints / officePossiblePoints) * 100 : 0;
     let officeBonus = totalBusinessDays > 0 ? (officeDaysWorked / totalBusinessDays) * 200 : 0;
 
+    // Limita o bônus de ESCRITÓRIO a um máximo de R$ 200.
+    officeBonus = Math.min(officeBonus, 200);
+
     if (officePerformancePercentage < 80) {
         officeBonus = 0;
     }
@@ -102,8 +105,7 @@ const calculateMonthlyBonus = (collaboratorId, allEvaluations, businessDays, yea
         fieldBonus = 0;
     }
     
-    // Limita o bônus de campo a um máximo de R$ 200.
-    fieldBonus = Math.min(fieldBonus, 200);
+    // Bônus de campo não tem mais limite.
 
     return { officeBonus, fieldBonus, totalBonus: officeBonus + fieldBonus, officeDaysWorked, totalBusinessDays, officeEvals: officeEvals.length, fieldEvals: fieldEvals.length };
 };
@@ -330,7 +332,7 @@ const AppProvider = ({ children }) => {
                 ...evalData,
                 managerName: userProfile?.name || 'Desconhecido',
                 managerId: userProfile?.id || null,
-                // LÓGICA CORRIGIDA: Se a avaliação já tem 'createdAt', mantém. Se não, cria um novo.
+                // LÓGICA CORRIGIDA PARA BUILD: Se a avaliação já tem 'createdAt', mantém. Se não, cria um novo.
                 createdAt: evalData.createdAt || new Date().toISOString()
             };
             
