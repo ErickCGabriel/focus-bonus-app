@@ -55,7 +55,7 @@ const IconButton = ({ children, onClick }) => <button onClick={onClick} classNam
 
 // --- LÓGICA DE CÁLCULO DE BÔNUS (HELPER) ---
 const calculateMonthlyBonus = (collaboratorId, allEvaluations, businessDays, year, month) => {
-    // ALTERAÇÃO 3: Apenas avaliações finalizadas (isFinalized não é false) entram no cálculo.
+    // Apenas avaliações finalizadas (isFinalized não é false) entram no cálculo.
     const myEvals = allEvaluations.filter(e => {
         const evalDate = parseDate(e.startDate);
         return e.collaboratorId === collaboratorId &&
@@ -102,7 +102,7 @@ const calculateMonthlyBonus = (collaboratorId, allEvaluations, businessDays, yea
         fieldBonus = 0;
     }
     
-    // ALTERAÇÃO 2: Limita o bônus de campo a um máximo de R$ 200.
+    // Limita o bônus de campo a um máximo de R$ 200.
     fieldBonus = Math.min(fieldBonus, 200);
 
     return { officeBonus, fieldBonus, totalBonus: officeBonus + fieldBonus, officeDaysWorked, totalBusinessDays, officeEvals: officeEvals.length, fieldEvals: fieldEvals.length };
@@ -199,7 +199,6 @@ const AppProvider = ({ children }) => {
         return [];
     }, [userProfile, collaborators]);
     
-    // ALTERAÇÃO 1: Lógica para salvar usuário do sistema, incluindo a atualização de senha por admin
     const handleSaveSystemUser = async (user, newPassword) => {
         try {
             const userData = {
@@ -331,7 +330,8 @@ const AppProvider = ({ children }) => {
                 ...evalData,
                 managerName: userProfile?.name || 'Desconhecido',
                 managerId: userProfile?.id || null,
-                createdAt: initialData ? evalData.createdAt : new Date().toISOString()
+                // LÓGICA CORRIGIDA: Se a avaliação já tem 'createdAt', mantém. Se não, cria um novo.
+                createdAt: evalData.createdAt || new Date().toISOString()
             };
             
             if (id) {
@@ -1074,7 +1074,7 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                             )}
                             <div className="mt-1 space-y-1 text-xs text-left">
                                 {dayEvaluations.map(e => {
-                                    // ALTERAÇÃO 3: Define a cor com base no status 'isFinalized'
+                                    // Define a cor com base no status 'isFinalized'
                                     const isFinalized = e.isFinalized !== false;
                                     let colorClasses = '';
                                     if (!isFinalized) {
@@ -1176,9 +1176,9 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
             observation: "",
             criteria: { prazo: 1, qualidade: 1, apontamento: 1 },
             collaboratorId: collaboratorId,
-            isFinalized: false, // ALTERAÇÃO 3: Valor padrão para nova avaliação
+            isFinalized: false, // Valor padrão para nova avaliação
         };
-        // ALTERAÇÃO 3: Garante que o estado 'isFinalized' seja carregado, com fallback para 'false'
+        // Garante que o estado 'isFinalized' seja carregado, com fallback para 'false'
         const dataToEdit = initialData ? { ...initialData, isFinalized: initialData.isFinalized ?? false } : defaultData;
         setFormData(dataToEdit);
     }, [initialData, dateRange, collaboratorId]);
@@ -1231,7 +1231,6 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
                          </div>
                      </div>
                      <div><label className="block text-sm font-medium text-gray-700">Observação (Opcional)</label><textarea value={formData.observation} onChange={e => setFormData(f => ({...f, observation: e.target.value}))} rows="2" className="mt-1 block w-full p-2 border rounded-md"></textarea></div>
-                    {/* ALTERAÇÃO 3: Adição do checkbox 'Avaliação Finalizada' */}
                     <div className="mt-4 p-3 bg-blue-50 border-l-4 border-blue-400">
                         <label className="flex items-center space-x-3 cursor-pointer">
                             <input 
@@ -1366,7 +1365,6 @@ function CollaboratorModal({ isOpen, onClose, initialData }) {
 function AccessControlModal({ isOpen, onClose, initialData }) {
     const { handleSaveSystemUser, allCollaborators, users } = useContext(AppContext);
     const [formData, setFormData] = useState(null);
-    // ALTERAÇÃO 1: Adicionado estado para a nova senha
     const [newPassword, setNewPassword] = useState('');
 
     useEffect(() => {
@@ -1374,7 +1372,6 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
             ? { ...initialData, team: initialData.team ? (Array.isArray(initialData.team) ? initialData.team : [initialData.team]) : [] } 
             : { name: '', email: '', password: '', role: 'manager', team: ['Projetos'], collaboratorId: '' }
         );
-        // Reseta o campo de nova senha ao abrir o modal
         setNewPassword('');
     }, [initialData]);
 
@@ -1395,7 +1392,6 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
             alert('Por favor, vincule um colaborador a esta conta de usuário.');
             return;
         }
-        // ALTERAÇÃO 1: Passa a nova senha (se houver) para a função de salvar
         handleSaveSystemUser(formData, newPassword);
         onClose();
     };
@@ -1420,7 +1416,6 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     <div><label className="block text-sm font-medium">Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
                     <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData} /></div>
                     
-                    {/* ALTERAÇÃO 1: Lógica para exibir campo de senha em modo de edição ou criação */}
                     {initialData ? (
                         <div>
                             <label className="block text-sm font-medium">Redefinir Senha (Opcional)</label>
@@ -1998,6 +1993,7 @@ function AuditModule() {
     );
 }
 
+// NOVO: Modal para forçar a troca de senha
 function ForcePasswordChangeModal() {
     const { handleChangePassword } = useContext(AppContext);
     const [newPassword, setNewPassword] = useState('');
@@ -2022,6 +2018,7 @@ function ForcePasswordChangeModal() {
             setError(result.message);
             setIsLoading(false);
         }
+        // Em caso de sucesso, o AppProvider vai recarregar e remover este modal.
     };
     
     return (
