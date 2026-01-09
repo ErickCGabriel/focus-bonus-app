@@ -721,7 +721,7 @@ function AppNavigator({ currentView, setCurrentView }) {
     const { darkMode } = useTheme();
 
     const canSeeDashboard = ['admin', 'manager', 'gerente'].includes(currentUser.role);
-    const canSeLançamentos = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
+    const canSeeLancamentos = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
     const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
     const canSeeAudit = currentUser.role === 'gerente';
     const canSeeMyData = currentUser.role === 'collaborator';
@@ -736,7 +736,7 @@ function AppNavigator({ currentView, setCurrentView }) {
     return (
         <div className={`mb-8 p-2 ${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-sm flex items-center flex-wrap gap-2`}>
             {canSeeDashboard && <NavButton view="dashboard" label="Dashboard" icon={<BarChart3 size={16}/>} />}
-            {canSeeLançamentos && <NavButton view="calendar" label="Lançamentos" icon={<Calendar size={16}/>} />}
+            {canSeeLancamentos && <NavButton view="calendar" label="Lançamentos" icon={<Calendar size={16}/>} />}
             {canSeeFinancial && <NavButton view="financial" label="Financeiro" icon={<DollarSign size={16}/>} />}
             {canSeeAudit && <NavButton view="audit" label="Auditoria" icon={<AlertTriangle size={16}/>} />}
             {canSeeMyData && <NavButton view="collaborator_view" label="Meus Dados" icon={<Users size={16}/>} />}
