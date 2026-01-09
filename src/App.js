@@ -1434,6 +1434,7 @@ function CollaboratorModal({ isOpen, onClose, initialData }) {
                             <option>Estudos</option>
                             <option>Automação</option>
                             <option>Campo</option>
+                            <option>Comissionamento</option>
                         </select>
                     </div>
                 </div>
@@ -1488,7 +1489,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
 
     if (!isOpen || !formData) return null;
 
-    const teams = ['Projetos', 'Laudos', 'Estudos', 'Automação', 'Campo'];
+    const teams = ['Projetos', 'Laudos', 'Estudos', 'Automação', 'Campo', 'Comissionamento'];
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
