@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, createContext, useContext } from 'react';
-import { Users, BarChart3, Calendar, PlusCircle, X, Briefcase, Mountain, ChevronLeft, ChevronRight, Edit, Trash2, UserPlus, Save, AlertTriangle, FileSpreadsheet, Trophy, LogOut, KeyRound, ShieldCheck, Cog, Bell, DollarSign, CheckCircle2, XCircle } from 'lucide-react';
+import { Users, BarChart3, Calendar, PlusCircle, X, Briefcase, Mountain, ChevronLeft, ChevronRight, Edit, Trash2, UserPlus, Save, AlertTriangle, FileSpreadsheet, Trophy, LogOut, KeyRound, ShieldCheck, Cog, Bell, DollarSign, CheckCircle2, XCircle, Moon, Sun } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 // Importações do Firebase
@@ -40,17 +40,64 @@ const parseDate = (dateString) => {
     const [year, month, day] = dateString.split("-").map(Number);
     return new Date(year, month - 1, day);
 };
-const Card = ({ children, className = '' }) => <div className={`bg-white rounded-lg shadow-md p-6 ${className}`}>{children}</div>;
+// --- CONTEXTO DE TEMA (MODO ESCURO) ---
+const ThemeContext = createContext();
+
+const ThemeProvider = ({ children }) => {
+    const [darkMode, setDarkMode] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('darkMode');
+            return saved ? JSON.parse(saved) : false;
+        }
+        return false;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('darkMode', JSON.stringify(darkMode));
+        if (darkMode) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    }, [darkMode]);
+
+    const toggleDarkMode = () => setDarkMode(!darkMode);
+
+    return (
+        <ThemeContext.Provider value={{ darkMode, toggleDarkMode }}>
+            {children}
+        </ThemeContext.Provider>
+    );
+};
+
+const useTheme = () => useContext(ThemeContext);
+
+const Card = ({ children, className = '' }) => {
+    const { darkMode } = useTheme();
+    return (
+        <div className={`${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white'} rounded-lg shadow-md p-6 ${className}`}>
+            {children}
+        </div>
+    );
+};
 const Button = ({ children, onClick, className = '', variant = 'primary', type = 'button', disabled = false }) => {
+    const { darkMode } = useTheme();
     const baseClasses = 'px-4 py-2 rounded-md font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed';
     const variants = {
         primary: 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm',
-        secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300',
+        secondary: darkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-200 text-gray-800 hover:bg-gray-300',
         danger: 'bg-red-600 text-white hover:bg-red-700',
     };
     return <button type={type} onClick={onClick} disabled={disabled} className={`${baseClasses} ${variants[variant]} ${className}`}>{children}</button>;
 };
-const IconButton = ({ children, onClick }) => <button onClick={onClick} className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-full">{children}</button>;
+const IconButton = ({ children, onClick }) => {
+    const { darkMode } = useTheme();
+    return (
+        <button onClick={onClick} className={`p-1.5 ${darkMode ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'} rounded-full`}>
+            {children}
+        </button>
+    );
+};
 
 
 // --- LÓGICA DE CÁLCULO DE BÔNUS (HELPER) ---
@@ -430,9 +477,11 @@ const AppProvider = ({ children }) => {
 // --- COMPONENTE PRINCIPAL & ROUTER ---
 export default function App() {
     return (
-        <AppProvider>
-            <AppRouter />
-        </AppProvider>
+        <ThemeProvider>
+            <AppProvider>
+                <AppRouter />
+            </AppProvider>
+        </ThemeProvider>
     );
 }
 
@@ -447,6 +496,7 @@ function AppRouter() {
 // --- PÁGINA DE LOGIN ---
 function LoginPage() {
     const { handleLogin } = useContext(AppContext);
+    const { darkMode, toggleDarkMode } = useTheme();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -464,24 +514,31 @@ function LoginPage() {
     };
 
     return (
-        <div className="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+        <div className={`${darkMode ? 'bg-gray-900' : 'bg-gray-100'} min-h-screen flex items-center justify-center p-4 transition-colors duration-200`}>
+            <button 
+                onClick={toggleDarkMode}
+                className={`absolute top-4 right-4 p-2 rounded-full transition-colors ${darkMode ? 'text-yellow-400 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-200'}`}
+                title={darkMode ? 'Modo Claro' : 'Modo Escuro'}
+            >
+                {darkMode ? <Sun size={24} /> : <Moon size={24} />}
+            </button>
             <div className="w-full max-w-md">
                 <Card className="shadow-2xl">
                     <div className="text-center mb-8">
                         <Trophy className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-                        <h1 className="text-3xl font-bold text-gray-900">Focus Bonus App</h1>
-                        <p className="text-gray-600">Por favor, faça login para continuar.</p>
+                        <h1 className={`text-3xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>Focus Bonus App</h1>
+                        <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Por favor, faça login para continuar.</p>
                     </div>
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Email</label>
-                            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 block w-full p-3 border border-gray-300 rounded-md shadow-sm" placeholder="ex: admin@focus.com" required />
+                            <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Email</label>
+                            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={`mt-1 block w-full p-3 border rounded-md shadow-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="ex: admin@focus.com" required />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Senha</label>
-                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 block w-full p-3 border border-gray-300 rounded-md shadow-sm" placeholder="••••••••" required />
+                            <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Senha</label>
+                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className={`mt-1 block w-full p-3 border rounded-md shadow-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="••••••••" required />
                         </div>
-                        {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+                        {error && <p className="text-sm text-red-500 text-center">{error}</p>}
                         <div>
                             <Button type="submit" className="w-full text-lg" disabled={!email || !password || isLoggingIn}>
                                 {isLoggingIn ? 'Entrando...' : <><KeyRound size={20} /> Entrar</>}
@@ -497,6 +554,7 @@ function LoginPage() {
 // --- CONTEÚDO PRINCIPAL DA APLICAÇÃO ---
 function AppContent() {
     const { currentUser, confirmation, setConfirmation } = useContext(AppContext);
+    const { darkMode } = useTheme();
     
     const getInitialView = () => {
         if (currentUser.role === 'collaborator') return 'collaborator_view';
@@ -514,7 +572,7 @@ function AppContent() {
     const [editingAccessUser, setEditingAccessUser] = useState(null);
 
     if (!currentUser) {
-        return <div className="min-h-screen flex items-center justify-center bg-gray-100"><p>Carregando Perfil...</p></div>;
+        return <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-gray-900' : 'bg-gray-100'}`}><p className={darkMode ? 'text-gray-100' : 'text-gray-800'}>Carregando Perfil...</p></div>;
     }
 
     // Forçar troca de senha se necessário
@@ -527,7 +585,7 @@ function AppContent() {
     const canLaunchAssessments = ['admin', 'manager', 'gerente'].includes(currentUser.role);
 
     return (
-        <div className="bg-gray-50 min-h-screen font-sans text-gray-800">
+        <div className={`${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-800'} min-h-screen font-sans transition-colors duration-200`}>
             <Header />
             <main className="p-4 sm:p-8 max-w-7xl mx-auto">
                 <AppNavigator currentView={currentView} setCurrentView={setCurrentView} />
@@ -552,6 +610,7 @@ function AppContent() {
 // --- COMPONENTES DE NAVEGAÇÃO E CABEÇALHO ---
 function Header() {
     const { currentUser, handleLogout, notifications, handleMarkNotificationAsRead, handleDeleteNotification } = useContext(AppContext);
+    const { darkMode, toggleDarkMode } = useTheme();
     const [showNotifications, setShowNotifications] = useState(false);
     
     const unreadCount = notifications.filter(n => !n.read).length;
@@ -578,17 +637,24 @@ function Header() {
     };
     
     return (
-        <header className="bg-white shadow-sm">
+        <header className={`${darkMode ? 'bg-gray-800 shadow-gray-900' : 'bg-white'} shadow-sm`}>
             <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                     <Trophy className="w-8 h-8 text-blue-600" />
-                    <h1 className="text-2xl font-bold text-gray-900">Focus Bonus App</h1>
+                    <h1 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>Focus Bonus App</h1>
                 </div>
                 <div className="flex items-center gap-4">
+                    <button 
+                        onClick={toggleDarkMode}
+                        className={`p-2 rounded-full transition-colors ${darkMode ? 'text-yellow-400 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'}`}
+                        title={darkMode ? 'Modo Claro' : 'Modo Escuro'}
+                    >
+                        {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+                    </button>
                     <div className="relative">
                         <button 
                             onClick={() => setShowNotifications(!showNotifications)}
-                            className="relative p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full"
+                            className={`relative p-2 rounded-full ${darkMode ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'}`}
                         >
                             <Bell size={20} />
                             {unreadCount > 0 && (
@@ -599,30 +665,30 @@ function Header() {
                         </button>
                         
                         {showNotifications && (
-                            <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border z-50 max-h-96 overflow-y-auto">
-                                <div className="p-3 border-b">
-                                    <h3 className="font-semibold">Notificações</h3>
+                            <div className={`absolute right-0 mt-2 w-80 rounded-lg shadow-lg border z-50 max-h-96 overflow-y-auto ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                                <div className={`p-3 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                                    <h3 className={`font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>Notificações</h3>
                                 </div>
                                 {notifications.length === 0 ? (
-                                    <div className="p-4 text-center text-gray-500">
+                                    <div className={`p-4 text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                         Nenhuma notificação
                                     </div>
                                 ) : (
-                                    <div className="divide-y">
+                                    <div className={`divide-y ${darkMode ? 'divide-gray-700' : 'divide-gray-200'}`}>
                                         {notifications.map(notification => (
                                             <div 
                                                 key={notification.id}
                                                 onClick={() => handleNotificationClick(notification)}
-                                                className={`p-3 cursor-pointer group relative hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''}`}
+                                                className={`p-3 cursor-pointer group relative ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'} ${!notification.read ? (darkMode ? 'bg-blue-900/30' : 'bg-blue-50') : ''}`}
                                             >
                                                 <IconButton onClick={(e) => { e.stopPropagation(); handleDeleteNotification(notification.id); }}>
-                                                    <X size={14} className="absolute top-2 right-2 text-gray-400 hidden group-hover:block hover:text-red-600" />
+                                                    <X size={14} className={`absolute top-2 right-2 hidden group-hover:block ${darkMode ? 'text-gray-500 hover:text-red-400' : 'text-gray-400 hover:text-red-600'}`} />
                                                 </IconButton>
                                                 <div className="flex justify-between items-start">
                                                     <div className="flex-1 pr-4">
-                                                        <p className="font-medium text-sm">{notification.title}</p>
-                                                        <p className="text-xs text-gray-600 mt-1">{notification.message}</p>
-                                                        <p className="text-xs text-gray-400 mt-1">
+                                                        <p className={`font-medium text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{notification.title}</p>
+                                                        <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{notification.message}</p>
+                                                        <p className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                                                             {new Date(notification.createdAt).toLocaleDateString('pt-BR')}
                                                         </p>
                                                     </div>
@@ -638,8 +704,8 @@ function Header() {
                         )}
                     </div>
                     <div className="text-right">
-                        <p className="font-semibold">{currentUser.name}</p>
-                        <p className="text-sm text-gray-500 capitalize">{getRoleDisplay()}</p>
+                        <p className={`font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{currentUser.name}</p>
+                        <p className={`text-sm capitalize ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{getRoleDisplay()}</p>
                     </div>
                     <Button onClick={handleLogout} variant="secondary">
                         <LogOut size={16} /> Sair
@@ -652,9 +718,10 @@ function Header() {
 
 function AppNavigator({ currentView, setCurrentView }) {
     const { currentUser } = useContext(AppContext);
+    const { darkMode } = useTheme();
 
     const canSeeDashboard = ['admin', 'manager', 'gerente'].includes(currentUser.role);
-    const canSeeLançamentos = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
+    const canSeLançamentos = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
     const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
     const canSeeAudit = currentUser.role === 'gerente';
     const canSeeMyData = currentUser.role === 'collaborator';
@@ -662,12 +729,12 @@ function AppNavigator({ currentView, setCurrentView }) {
     const canSeeAccessControl = currentUser.role === 'admin';
 
     const NavButton = ({ view, label, icon }) => (
-        <button onClick={() => setCurrentView(view)} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium ${currentView === view ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
+        <button onClick={() => setCurrentView(view)} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium ${currentView === view ? 'bg-blue-600 text-white' : (darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100')}`}>
             {icon} {label}
         </button>
     );
     return (
-        <div className="mb-8 p-2 bg-white rounded-lg shadow-sm flex items-center flex-wrap gap-2">
+        <div className={`mb-8 p-2 ${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-sm flex items-center flex-wrap gap-2`}>
             {canSeeDashboard && <NavButton view="dashboard" label="Dashboard" icon={<BarChart3 size={16}/>} />}
             {canSeeLançamentos && <NavButton view="calendar" label="Lançamentos" icon={<Calendar size={16}/>} />}
             {canSeeFinancial && <NavButton view="financial" label="Financeiro" icon={<DollarSign size={16}/>} />}
@@ -764,6 +831,8 @@ function DashboardModule() {
         return data;
     }, [performanceData, year]);
 
+    const { darkMode } = useTheme();
+    
     return (
         <div className="space-y-8">
             <Card>
@@ -771,8 +840,8 @@ function DashboardModule() {
                     <h2 className="text-2xl font-bold">Dashboard de Performance</h2>
                 </div>
                 <div className="flex gap-4 mt-4">
-                    <select value={year} onChange={e => setYear(Number(e.target.value))} className="p-2 border rounded-md"><option>2024</option><option>2025</option></select>
-                    <select value={quarter} onChange={e => setQuarter(Number(e.target.value))} className="p-2 border rounded-md">
+                    <select value={year} onChange={e => setYear(Number(e.target.value))} className={`p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}><option>2024</option><option>2025</option><option>2026</option></select>
+                    <select value={quarter} onChange={e => setQuarter(Number(e.target.value))} className={`p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}>
                         <option value={1}>1º Trimestre</option><option value={2}>2º Trimestre</option>
                         <option value={3}>3º Trimestre</option><option value={4}>4º Trimestre</option>
                     </select>
@@ -783,13 +852,13 @@ function DashboardModule() {
                     <h3 className="font-bold text-lg mb-4">Performance Mensal (%)</h3>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-center">
-                            <thead className="bg-gray-100"><tr><th className="p-2 text-left">Mês</th>{Object.keys(performanceData).map(name => <th key={name} className="p-2">{name}</th>)}</tr></thead>
+                            <thead className={darkMode ? 'bg-gray-700' : 'bg-gray-100'}><tr><th className="p-2 text-left">Mês</th>{Object.keys(performanceData).map(name => <th key={name} className="p-2">{name}</th>)}</tr></thead>
                             <tbody>
                                 {Array.from({length: 12}).map((_, month) => (
-                                    <tr key={month} className="border-b"><td className="p-2 text-left font-semibold">{new Date(year, month).toLocaleString('pt-BR', {month: 'long'})}</td>
+                                    <tr key={month} className={`border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}><td className="p-2 text-left font-semibold">{new Date(year, month).toLocaleString('pt-BR', {month: 'long'})}</td>
                                     {Object.keys(performanceData).map(name => {
                                         const perf = performanceData[name][month];
-                                        const bgColor = perf === null ? 'bg-gray-100' : perf > 80 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                                        const bgColor = perf === null ? (darkMode ? 'bg-gray-700' : 'bg-gray-100') : perf > 80 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
                                         return <td key={name} className={`p-2 font-semibold ${bgColor}`}>{perf !== null ? perf.toFixed(2)+'%' : '-'}</td>
                                     })}</tr>
                                 ))}
@@ -1113,11 +1182,16 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
 }
 
 function UserSelector({ collaborators, selectedCollaboratorId, setSelectedCollaboratorId }) {
+    const { darkMode } = useTheme();
+    const sortedCollaborators = useMemo(() => {
+        return [...collaborators].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    }, [collaborators]);
+    
     return (
         <Card className="mb-6">
-            <h3 className="font-bold text-lg mb-3 flex items-center gap-2"><Users className="w-5 h-5 text-gray-500" />Colaborador</h3>
-            <select value={selectedCollaboratorId || ''} onChange={(e) => setSelectedCollaboratorId(e.target.value)} className="w-full p-2 border rounded-md bg-white">
-                {collaborators.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
+            <h3 className={`font-bold text-lg mb-3 flex items-center gap-2 ${darkMode ? 'text-gray-100' : ''}`}><Users className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />Colaborador</h3>
+            <select value={selectedCollaboratorId || ''} onChange={(e) => setSelectedCollaboratorId(e.target.value)} className={`w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}>
+                {sortedCollaborators.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
             </select>
         </Card>
     );
@@ -1630,6 +1704,7 @@ function FinancialModule() {
                         >
                             <option value={2024}>2024</option>
                             <option value={2025}>2025</option>
+                            <option value={2026}>2026</option>
                         </select>
                     </div>
                 </div>
@@ -1800,6 +1875,7 @@ function AuditModule() {
                         >
                             <option value={2024}>2024</option>
                             <option value={2025}>2025</option>
+                            <option value={2026}>2026</option>
                         </select>
                     </div>
                 </div>
