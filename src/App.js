@@ -858,7 +858,7 @@ function DashboardModule() {
                                     <tr key={month} className={`border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}><td className="p-2 text-left font-semibold">{new Date(year, month).toLocaleString('pt-BR', {month: 'long'})}</td>
                                     {Object.keys(performanceData).map(name => {
                                         const perf = performanceData[name][month];
-                                        const bgColor = perf === null ? (darkMode ? 'bg-gray-700' : 'bg-gray-100') : perf > 80 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                                        const bgColor = perf === null ? (darkMode ? 'bg-gray-700' : 'bg-gray-100') : perf > 80 ? (darkMode ? 'bg-green-900/50 text-green-300' : 'bg-green-100 text-green-800') : (darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-800');
                                         return <td key={name} className={`p-2 font-semibold ${bgColor}`}>{perf !== null ? perf.toFixed(2)+'%' : '-'}</td>
                                     })}</tr>
                                 ))}
@@ -871,8 +871,8 @@ function DashboardModule() {
                         <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Trophy className="text-yellow-500"/> Ganhadores do Bônus Trimestral (Q{quarter})</h3>
                         <div className="space-y-2">
                             {Object.entries(quarterlyWinners).map(([team, name]) => (
-                                <div key={team} className="p-3 bg-yellow-50 rounded-md">
-                                    <p className="text-sm font-bold text-yellow-700">{team}</p>
+                                <div key={team} className={`p-3 rounded-md ${darkMode ? 'bg-yellow-900/30 border border-yellow-700' : 'bg-yellow-50'}`}>
+                                    <p className={`text-sm font-bold ${darkMode ? 'text-yellow-400' : 'text-yellow-700'}`}>{team}</p>
                                     <p className="text-lg font-semibold">{name || 'Nenhum ganhador'}</p>
                                 </div>
                             ))}
@@ -936,6 +936,7 @@ function CalendarModule({ onLaunchEvalModal, isReadOnly = false }) {
 
 function AccessControlModule({ onLaunchAccessModal }) {
     const { users, handleDeleteSystemUser } = useContext(AppContext);
+    const { darkMode } = useTheme();
     
     const getTeamDisplay = (user) => {
         if (user.role === 'admin') return 'Admin';
@@ -958,11 +959,11 @@ function AccessControlModule({ onLaunchAccessModal }) {
             </div>
             <div className="space-y-3">
                 {users.map(user => (
-                    <div key={user.id} className="p-4 border rounded-lg flex justify-between items-center bg-gray-50">
+                    <div key={user.id} className={`p-4 border rounded-lg flex justify-between items-center ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
                         <div>
                             <p className="font-bold text-lg">{user.name}</p>
-                            <p className="text-sm text-gray-600">{user.email}</p>
-                            <p className="text-xs font-semibold uppercase text-blue-600 mt-1">{getTeamDisplay(user)}</p>
+                            <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{user.email}</p>
+                            <p className={`text-xs font-semibold uppercase mt-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>{getTeamDisplay(user)}</p>
                         </div>
                         <div className="flex items-center gap-3">
                             <IconButton onClick={() => onLaunchAccessModal(user)}><Edit size={18} /></IconButton>
@@ -979,6 +980,7 @@ function AccessControlModule({ onLaunchAccessModal }) {
 
 function CollaboratorManagementModule({ onLaunchCollaboratorModal }) {
     const { allCollaborators, handleDeleteCollaborator } = useContext(AppContext);
+    const { darkMode } = useTheme();
     return (
         <Card>
             <div className="flex justify-between items-center mb-6">
@@ -987,8 +989,8 @@ function CollaboratorManagementModule({ onLaunchCollaboratorModal }) {
             </div>
             <div className="space-y-3">
                 {allCollaborators.map(user => (
-                    <div key={user.id} className="p-4 border rounded-lg flex justify-between items-center bg-gray-50">
-                        <div><p className="font-bold text-lg">{user.name}</p><p className="text-sm text-gray-600">{user.team}</p></div>
+                    <div key={user.id} className={`p-4 border rounded-lg flex justify-between items-center ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                        <div><p className="font-bold text-lg">{user.name}</p><p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{user.team}</p></div>
                         <div className="flex items-center gap-3">
                             <IconButton onClick={() => onLaunchCollaboratorModal(user)}><Edit size={18} /></IconButton>
                             <IconButton onClick={() => handleDeleteCollaborator(user.id)}><Trash2 size={18} className="text-red-500 hover:text-red-700" /></IconButton>
@@ -1002,6 +1004,7 @@ function CollaboratorManagementModule({ onLaunchCollaboratorModal }) {
 
 function BusinessDaysModule() {
     const { businessDays, handleSaveBusinessDays } = useContext(AppContext);
+    const { darkMode } = useTheme();
     const [year, setYear] = useState(new Date().getFullYear());
     const [days, setDays] = useState({});
 
@@ -1029,7 +1032,7 @@ function BusinessDaysModule() {
             <h2 className="text-2xl font-bold mb-4">Configurar Dias Úteis</h2>
             <div className="flex items-center gap-4 mb-6">
                 <label className="font-semibold">Ano:</label>
-                <select value={year} onChange={e => setYear(Number(e.target.value))} className="p-2 border rounded-md">
+                <select value={year} onChange={e => setYear(Number(e.target.value))} className={`p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}>
                     <option>2024</option>
                     <option>2025</option>
                     <option>2026</option>
@@ -1037,14 +1040,14 @@ function BusinessDaysModule() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Array.from({length: 12}).map((_, i) => (
-                    <div key={i} className="p-4 border rounded-lg">
+                    <div key={i} className={`p-4 border rounded-lg ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                         <label className="font-bold text-lg">{new Date(year, i).toLocaleString('pt-BR', {month: 'long'})}</label>
                         <div className="flex items-center gap-2 mt-2">
                             <input 
                                 type="number" 
                                 value={days[i] || ''} 
                                 onChange={e => handleDayChange(i, e.target.value)} 
-                                className="w-full p-2 border rounded-md"
+                                className={`w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}
                             />
                             <Button onClick={() => handleSave(i)}><Save size={16}/></Button>
                         </div>
@@ -1060,6 +1063,7 @@ function BusinessDaysModule() {
 
 function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurrentDate, isReadOnly = false, onViewEvaluationDetails }) {
     const { evaluations, handleDeleteEvaluation } = useContext(AppContext);
+    const { darkMode } = useTheme();
     const [startDate, setStartDate] = useState(null);
     const [endDate, setEndDate] = useState(null);
     
@@ -1111,21 +1115,21 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
         <Card>
             <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-4">
-                     <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100"><ChevronLeft /></button>
+                     <button onClick={handlePrevMonth} className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100'}`}><ChevronLeft /></button>
                      <h2 className="text-xl font-bold text-center w-48">{currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}</h2>
-                     <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100"><ChevronRight /></button>
+                     <button onClick={handleNextMonth} className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100'}`}><ChevronRight /></button>
                 </div>
             </div>
              {!isReadOnly && (
-                 <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+                 <div className={`mb-4 p-4 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4 ${darkMode ? 'bg-blue-900/30 border border-blue-700' : 'bg-blue-50 border border-blue-200'}`}>
                      <div>
-                         <p className="font-semibold text-blue-800">Selecione um período para avaliação:</p>
-                         <p className="text-sm text-blue-700">Início: <span className="font-bold">{formatDate(startDate)}</span> | Fim: <span className="font-bold">{formatDate(endDate)}</span></p>
+                         <p className={`font-semibold ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Selecione um período para avaliação:</p>
+                         <p className={`text-sm ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>Início: <span className="font-bold">{formatDate(startDate)}</span> | Fim: <span className="font-bold">{formatDate(endDate)}</span></p>
                      </div>
                      <Button onClick={() => onLaunchEvalModal(null, {start: startDate, end: endDate}, collaboratorId)} disabled={!startDate || !endDate}><PlusCircle size={16} /> Lançar Avaliação</Button>
                  </div>
              )}
-            <div className="grid grid-cols-7 gap-1 text-center font-semibold text-gray-600">{weekdays.map(day => <div key={day} className="py-2">{day}</div>)}</div>
+            <div className={`grid grid-cols-7 gap-1 text-center font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{weekdays.map(day => <div key={day} className="py-2">{day}</div>)}</div>
             <div className="grid grid-cols-7 gap-1">
                 {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`} />)}
                 {Array.from({ length: daysInMonth }).map((_, day) => {
@@ -1138,22 +1142,21 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                     );
 
                     return (
-                        <div key={dayNumber} onClick={!isReadOnly ? () => handleDayClick(dayNumber) : undefined} className={`p-2 h-28 border rounded-md transition-colors ${isInRange ? 'bg-blue-100 border-blue-300' : 'bg-white'} ${!isReadOnly ? 'cursor-pointer hover:bg-gray-100' : 'cursor-default'} relative`}>
-                            <span className="font-bold">{dayNumber}</span>
+                        <div key={dayNumber} onClick={!isReadOnly ? () => handleDayClick(dayNumber) : undefined} className={`p-2 h-28 border rounded-md transition-colors ${isInRange ? (darkMode ? 'bg-blue-900/50 border-blue-600' : 'bg-blue-100 border-blue-300') : (darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200')} ${!isReadOnly ? (darkMode ? 'cursor-pointer hover:bg-gray-600' : 'cursor-pointer hover:bg-gray-100') : 'cursor-default'} relative`}>
+                            <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{dayNumber}</span>
                             {hasNegativeEvaluation && (
                                 <span className="absolute top-1 right-1 text-red-500 font-bold text-lg">X</span>
                             )}
                             <div className="mt-1 space-y-1 text-xs text-left">
                                 {dayEvaluations.map(e => {
-                                    // Define a cor com base no status 'isFinalized'
                                     const isFinalized = e.isFinalized !== false;
                                     let colorClasses = '';
                                     if (!isFinalized) {
                                         colorClasses = 'bg-red-600 text-white';
                                     } else if (e.activityType === 'Escritório') {
-                                        colorClasses = 'bg-green-100 text-green-800';
+                                        colorClasses = darkMode ? 'bg-green-800 text-green-200' : 'bg-green-100 text-green-800';
                                     } else {
-                                        colorClasses = 'bg-orange-100 text-orange-800';
+                                        colorClasses = darkMode ? 'bg-orange-800 text-orange-200' : 'bg-orange-100 text-orange-800';
                                     }
 
                                     return (
@@ -1164,7 +1167,7 @@ function CalendarView({ collaboratorId, onLaunchEvalModal, currentDate, setCurre
                                         >
                                             {e.csName}
                                             {!isReadOnly && (
-                                                <div className="absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 bg-white/70 backdrop-blur-sm rounded-full px-1">
+                                                <div className={`absolute z-10 hidden group-hover:flex items-center gap-1 right-1 top-0.5 rounded-full px-1 ${darkMode ? 'bg-gray-800/70' : 'bg-white/70'} backdrop-blur-sm`}>
                                                     <IconButton onClick={(evt) => {evt.stopPropagation(); onLaunchEvalModal(e, null, collaboratorId)}}><Edit size={12}/></IconButton>
                                                     <IconButton onClick={(evt) => {evt.stopPropagation(); handleDeleteEvaluation(e.id)}}><Trash2 size={12}/></IconButton>
                                                 </div>
@@ -1199,6 +1202,7 @@ function UserSelector({ collaborators, selectedCollaboratorId, setSelectedCollab
 
 function ResultsDashboard({ collaboratorId, currentDate }) {
     const { allCollaborators, evaluations, businessDays } = useContext(AppContext);
+    const { darkMode } = useTheme();
     
     const collaborator = allCollaborators.find(c => c.id === collaboratorId);
     
@@ -1210,11 +1214,11 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
     return (
         <Card>
             <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><BarChart3 /> Resumo de {currentDate.toLocaleDateString('pt-BR', { month: 'long' })}</h3>
-            <p className="mb-4 text-sm font-semibold text-gray-700">Colaborador: {collaborator?.name || 'N/A'}</p>
+            <p className={`mb-4 text-sm font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-700'}`}>Colaborador: {collaborator?.name || 'N/A'}</p>
             <div className="space-y-4">
-                <div className="p-3 bg-green-50 rounded-lg"><p className="font-bold text-green-800">Bônus Escritório</p><p className="text-2xl font-bold text-green-700">R$ {monthlyData.officeBonus.toFixed(2)}</p><p className="text-sm text-green-600">{monthlyData.officeDaysWorked} de {monthlyData.totalBusinessDays} dias úteis trabalhados</p></div>
-                <div className="p-3 bg-orange-50 rounded-lg"><p className="font-bold text-orange-800">Bônus Campo (Diárias)</p><p className="text-2xl font-bold text-orange-700">R$ {monthlyData.fieldBonus.toFixed(2)}</p><p className="text-sm text-orange-600">Valor acumulado no mês.</p></div>
-                <div className="p-3 bg-blue-50 rounded-lg border-t-2 border-blue-200 mt-4"><p className="font-bold text-blue-800">Total Bônus no Mês</p><p className="text-3xl font-bold text-blue-700">R$ {(monthlyData.officeBonus + monthlyData.fieldBonus).toFixed(2)}</p></div>
+                <div className={`p-3 rounded-lg ${darkMode ? 'bg-green-900/40 border border-green-700' : 'bg-green-50'}`}><p className={`font-bold ${darkMode ? 'text-green-300' : 'text-green-800'}`}>Bônus Escritório</p><p className={`text-2xl font-bold ${darkMode ? 'text-green-400' : 'text-green-700'}`}>R$ {monthlyData.officeBonus.toFixed(2)}</p><p className={`text-sm ${darkMode ? 'text-green-500' : 'text-green-600'}`}>{monthlyData.officeDaysWorked} de {monthlyData.totalBusinessDays} dias úteis trabalhados</p></div>
+                <div className={`p-3 rounded-lg ${darkMode ? 'bg-orange-900/40 border border-orange-700' : 'bg-orange-50'}`}><p className={`font-bold ${darkMode ? 'text-orange-300' : 'text-orange-800'}`}>Bônus Campo (Diárias)</p><p className={`text-2xl font-bold ${darkMode ? 'text-orange-400' : 'text-orange-700'}`}>R$ {monthlyData.fieldBonus.toFixed(2)}</p><p className={`text-sm ${darkMode ? 'text-orange-500' : 'text-orange-600'}`}>Valor acumulado no mês.</p></div>
+                <div className={`p-3 rounded-lg border-t-2 mt-4 ${darkMode ? 'bg-blue-900/40 border-blue-700' : 'bg-blue-50 border-blue-200'}`}><p className={`font-bold ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Total Bônus no Mês</p><p className={`text-3xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>R$ {(monthlyData.officeBonus + monthlyData.fieldBonus).toFixed(2)}</p></div>
             </div>
         </Card>
     );
@@ -1223,14 +1227,15 @@ function ResultsDashboard({ collaboratorId, currentDate }) {
 // --- MODAIS ---
 
 function ConfirmationModal({ isOpen, onClose, onConfirm, title, message }) {
+    const { darkMode } = useTheme();
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <Card className="w-full max-w-md">
                 <div className="flex flex-col items-center text-center">
-                    <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4"><AlertTriangle className="w-6 h-6 text-red-600" /></div>
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${darkMode ? 'bg-red-900/50' : 'bg-red-100'}`}><AlertTriangle className="w-6 h-6 text-red-600" /></div>
                     <h2 className="text-xl font-bold mb-2">{title}</h2>
-                    <p className="text-gray-600 mb-6">{message}</p>
+                    <p className={`mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{message}</p>
                     <div className="flex justify-center gap-4 w-full"><Button variant="secondary" onClick={onClose} className="w-full">Cancelar</Button><Button variant="danger" onClick={onConfirm} className="w-full">Confirmar</Button></div>
                 </div>
             </Card>
@@ -1240,6 +1245,7 @@ function ConfirmationModal({ isOpen, onClose, onConfirm, title, message }) {
 
 function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaboratorId }) {
     const { handleSaveEvaluation, allCollaborators } = useContext(AppContext);
+    const { darkMode } = useTheme();
     const [formData, setFormData] = useState(null);
     const [error, setError] = useState('');
     
@@ -1290,24 +1296,24 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
     return (
          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
              <Card className="w-full max-w-lg my-8">
-                 <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{initialData ? 'Editar' : 'Lançar'} Avaliação</h2><button onClick={onClose}><X className="text-gray-500" /></button></div>
+                 <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{initialData ? 'Editar' : 'Lançar'} Avaliação</h2><button onClick={onClose}><X className={darkMode ? 'text-gray-400' : 'text-gray-500'} /></button></div>
                  <div className="space-y-4">
                      <div>
-                         <label className="block text-sm font-medium text-gray-700">Colaborador</label>
-                         <input type="text" value={selectedCollaborator?.name || ''} className="mt-1 block w-full p-2 border rounded-md bg-gray-100" disabled />
+                         <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Colaborador</label>
+                         <input type="text" value={selectedCollaborator?.name || ''} className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-100 border-gray-300'}`} disabled />
                      </div>
-                     <p className="font-semibold bg-gray-100 p-2 rounded-md">Período: {new Date(formData.startDate+'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(formData.endDate+'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                     <div><label className="block text-sm font-medium text-gray-700">Tipo de Atividade</label><div className="mt-1 grid grid-cols-2 gap-2"><button onClick={() => setFormData(f => ({...f, activityType: 'Escritório'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Escritório' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Briefcase size={16}/> Escritório</button><button onClick={() => setFormData(f => ({...f, activityType: 'Campo'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Campo' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}><Mountain size={16}/> Campo</button></div></div>
-                     <div><label className="block text-sm font-medium text-gray-700">Nome da CS (Contrato)</label><input type="text" value={formData.csName} onChange={e => {setFormData(f => ({...f, csName: e.target.value})); setError('')}} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : 'border-gray-300'}`} />{error && <p className="text-red-500 text-xs mt-1">{error}</p>}</div>
-                     <div><label className="block text-sm font-medium text-gray-700">Critérios</label>
-                         <div className="mt-1 space-y-2 p-3 bg-gray-50 rounded-md">
+                     <p className={`font-semibold p-2 rounded-md ${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100'}`}>Período: {new Date(formData.startDate+'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(formData.endDate+'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                     <div><label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Tipo de Atividade</label><div className="mt-1 grid grid-cols-2 gap-2"><button onClick={() => setFormData(f => ({...f, activityType: 'Escritório'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Escritório' ? (darkMode ? 'border-blue-500 bg-blue-900/50' : 'border-blue-500 bg-blue-50') : (darkMode ? 'border-gray-600 text-gray-300' : 'border-gray-200')}`}><Briefcase size={16}/> Escritório</button><button onClick={() => setFormData(f => ({...f, activityType: 'Campo'}))} className={`p-3 rounded-md flex items-center justify-center gap-2 border-2 ${formData.activityType === 'Campo' ? (darkMode ? 'border-blue-500 bg-blue-900/50' : 'border-blue-500 bg-blue-50') : (darkMode ? 'border-gray-600 text-gray-300' : 'border-gray-200')}`}><Mountain size={16}/> Campo</button></div></div>
+                     <div><label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Nome da CS (Contrato)</label><input type="text" value={formData.csName} onChange={e => {setFormData(f => ({...f, csName: e.target.value})); setError('')}} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : (darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'border-gray-300')}`} />{error && <p className="text-red-500 text-xs mt-1">{error}</p>}</div>
+                     <div><label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Critérios</label>
+                         <div className={`mt-1 space-y-2 p-3 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                              {Object.entries(formData.criteria).map(([key, value]) => (
-                                 <div key={key} className="flex justify-between items-center"><span className="capitalize font-medium text-gray-800">{key.replace('equipamento', 'equip./veículo')}</span><select value={value} onChange={e => setFormData(f => ({...f, criteria: {...f.criteria, [key]: Number(e.target.value)}}))} className="p-1 border rounded-md"><option value={1}>Sim</option><option value={0}>Não</option></select></div>
+                                 <div key={key} className="flex justify-between items-center"><span className={`capitalize font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{key.replace('equipamento', 'equip./veículo')}</span><select value={value} onChange={e => setFormData(f => ({...f, criteria: {...f.criteria, [key]: Number(e.target.value)}}))} className={`p-1 border rounded-md ${darkMode ? 'bg-gray-600 border-gray-500 text-gray-100' : ''}`}><option value={1}>Sim</option><option value={0}>Não</option></select></div>
                              ))}
                          </div>
                      </div>
-                     <div><label className="block text-sm font-medium text-gray-700">Observação (Opcional)</label><textarea value={formData.observation} onChange={e => setFormData(f => ({...f, observation: e.target.value}))} rows="2" className="mt-1 block w-full p-2 border rounded-md"></textarea></div>
-                    <div className="mt-4 p-3 bg-blue-50 border-l-4 border-blue-400">
+                     <div><label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Observação (Opcional)</label><textarea value={formData.observation} onChange={e => setFormData(f => ({...f, observation: e.target.value}))} rows="2" className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`}></textarea></div>
+                    <div className={`mt-4 p-3 border-l-4 ${darkMode ? 'bg-blue-900/30 border-blue-600' : 'bg-blue-50 border-blue-400'}`}>
                         <label className="flex items-center space-x-3 cursor-pointer">
                             <input 
                                 type="checkbox"
@@ -1315,9 +1321,9 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
                                 onChange={e => setFormData(f => ({ ...f, isFinalized: e.target.checked }))}
                                 className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
-                            <span className="font-semibold text-gray-800">Avaliação Finalizada</span>
+                            <span className={`font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Avaliação Finalizada</span>
                         </label>
-                        <p className="text-xs text-gray-600 mt-1">
+                        <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                             Marque esta caixa para que a avaliação seja incluída no cálculo final do bônus.
                         </p>
                     </div>
@@ -1329,6 +1335,7 @@ function EvaluationModal({ isOpen, onClose, dateRange, initialData, collaborator
 }
 
 function EvaluationDetailModal({ isOpen, onClose, evaluationData }) {
+    const { darkMode } = useTheme();
     if (!isOpen || !evaluationData) return null;
 
     const { csName, activityType, startDate, endDate, criteria, observation, managerName } = evaluationData;
@@ -1341,23 +1348,23 @@ function EvaluationDetailModal({ isOpen, onClose, evaluationData }) {
                     <IconButton onClick={onClose}><X /></IconButton>
                 </div>
                 <div className="space-y-4 text-sm">
-                    <div className="p-3 bg-gray-50 rounded-md">
-                        <p><strong className="font-semibold text-gray-600">CS:</strong> {csName}</p>
-                        <p><strong className="font-semibold text-gray-600">Tipo:</strong> {activityType}</p>
-                        <p><strong className="font-semibold text-gray-600">Período:</strong> {new Date(startDate + 'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(endDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                        <p><strong className="font-semibold text-gray-600">Gestor:</strong> {managerName || 'N/A'}</p>
+                    <div className={`p-3 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                        <p><strong className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>CS:</strong> {csName}</p>
+                        <p><strong className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Tipo:</strong> {activityType}</p>
+                        <p><strong className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Período:</strong> {new Date(startDate + 'T00:00:00').toLocaleDateString('pt-BR')} a {new Date(endDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                        <p><strong className={`font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Gestor:</strong> {managerName || 'N/A'}</p>
                     </div>
 
                     <div>
-                        <h3 className="font-semibold text-gray-800 mb-2">Critérios Avaliados</h3>
+                        <h3 className={`font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Critérios Avaliados</h3>
                         <div className="space-y-2">
                             {Object.entries(criteria).map(([key, value]) => (
-                                <div key={key} className={`flex items-center justify-between p-2 rounded-md ${value === 1 ? 'bg-green-50' : 'bg-red-50'}`}>
-                                    <span className="capitalize font-medium text-gray-800">{key.replace('equipamento', 'equip./veículo')}</span>
+                                <div key={key} className={`flex items-center justify-between p-2 rounded-md ${value === 1 ? (darkMode ? 'bg-green-900/50' : 'bg-green-50') : (darkMode ? 'bg-red-900/50' : 'bg-red-50')}`}>
+                                    <span className={`capitalize font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{key.replace('equipamento', 'equip./veículo')}</span>
                                     {value === 1 ? (
-                                        <span className="flex items-center gap-2 font-semibold text-green-700"><CheckCircle2 size={16} /> Sim</span>
+                                        <span className={`flex items-center gap-2 font-semibold ${darkMode ? 'text-green-400' : 'text-green-700'}`}><CheckCircle2 size={16} /> Sim</span>
                                     ) : (
-                                        <span className="flex items-center gap-2 font-semibold text-red-700"><XCircle size={16} /> Não</span>
+                                        <span className={`flex items-center gap-2 font-semibold ${darkMode ? 'text-red-400' : 'text-red-700'}`}><XCircle size={16} /> Não</span>
                                     )}
                                 </div>
                             ))}
@@ -1366,8 +1373,8 @@ function EvaluationDetailModal({ isOpen, onClose, evaluationData }) {
 
                     {observation && (
                         <div>
-                            <h3 className="font-semibold text-gray-800 mb-2">Observação</h3>
-                            <p className="p-3 bg-gray-50 rounded-md text-gray-700 whitespace-pre-wrap">{observation}</p>
+                            <h3 className={`font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>Observação</h3>
+                            <p className={`p-3 rounded-md whitespace-pre-wrap ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-700'}`}>{observation}</p>
                         </div>
                     )}
                     
@@ -1382,6 +1389,7 @@ function EvaluationDetailModal({ isOpen, onClose, evaluationData }) {
 
 function CollaboratorModal({ isOpen, onClose, initialData }) {
     const { handleSaveCollaborator } = useContext(AppContext);
+    const { darkMode } = useTheme();
     const [formData, setFormData] = useState(null);
     const [error, setError] = useState('');
 
@@ -1414,13 +1422,13 @@ function CollaboratorModal({ isOpen, onClose, initialData }) {
                 </div>
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Nome Completo</label>
-                        <input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : 'border-gray-300'}`} />
+                        <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Nome Completo</label>
+                        <input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${error ? 'border-red-500' : (darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'border-gray-300')}`} />
                         {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Equipe</label>
-                        <select value={formData.team} onChange={e => handleChange('team', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                        <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Equipe</label>
+                        <select value={formData.team} onChange={e => handleChange('team', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`}>
                             <option>Projetos</option>
                             <option>Laudos</option>
                             <option>Estudos</option>
@@ -1440,6 +1448,7 @@ function CollaboratorModal({ isOpen, onClose, initialData }) {
 
 function AccessControlModal({ isOpen, onClose, initialData }) {
     const { handleSaveSystemUser, allCollaborators, users } = useContext(AppContext);
+    const { darkMode } = useTheme();
     const [formData, setFormData] = useState(null);
     const [newPassword, setNewPassword] = useState('');
 
@@ -1489,35 +1498,35 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     <IconButton onClick={onClose}><X /></IconButton>
                 </div>
                 <div className="space-y-4">
-                    <div><label className="block text-sm font-medium">Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" /></div>
-                    <div><label className="block text-sm font-medium">Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="mt-1 block w-full p-2 border rounded-md" disabled={!!initialData} /></div>
+                    <div><label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : ''}`}>Nome Completo</label><input type="text" value={formData.name} onChange={e => handleChange('name', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`} /></div>
+                    <div><label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : ''}`}>Email</label><input type="email" value={formData.email} onChange={e => handleChange('email', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`} disabled={!!initialData} /></div>
                     
                     {initialData ? (
                         <div>
-                            <label className="block text-sm font-medium">Redefinir Senha (Opcional)</label>
+                            <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : ''}`}>Redefinir Senha (Opcional)</label>
                             <input 
                                 type="password" 
                                 value={newPassword}
                                 onChange={e => setNewPassword(e.target.value)}
-                                className="mt-1 block w-full p-2 border rounded-md" 
+                                className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`}
                                 placeholder="Deixe em branco para não alterar"
                             />
                         </div>
                     ) : (
                         <div>
-                            <label className="block text-sm font-medium">Senha Inicial</label>
+                            <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : ''}`}>Senha Inicial</label>
                             <input 
                                 type="password" 
                                 value={formData.password}
                                 onChange={e => handleChange('password', e.target.value)}
-                                className="mt-1 block w-full p-2 border rounded-md" 
+                                className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`}
                             />
                         </div>
                     )}
 
                     <div>
-                        <label className="block text-sm font-medium">Função</label>
-                        <select value={formData.role} onChange={e => handleChange('role', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                        <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : ''}`}>Função</label>
+                        <select value={formData.role} onChange={e => handleChange('role', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`}>
                             <option value="manager">Gestor</option>
                             <option value="gerente">Gerente</option>
                             <option value="collaborator">Colaborador</option>
@@ -1528,8 +1537,8 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     
                     {formData.role === 'collaborator' && (
                         <div>
-                            <label className="block text-sm font-medium">Vincular ao Colaborador</label>
-                            <select value={formData.collaboratorId || ''} onChange={e => handleChange('collaboratorId', e.target.value)} className="mt-1 block w-full p-2 border rounded-md">
+                            <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : ''}`}>Vincular ao Colaborador</label>
+                            <select value={formData.collaboratorId || ''} onChange={e => handleChange('collaboratorId', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`}>
                                 <option value="">Selecione um colaborador</option>
                                 {initialData && initialData.collaboratorId &&
                                     <option value={initialData.collaboratorId}>
@@ -1545,8 +1554,8 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
 
                     {formData.role === 'manager' && (
                         <div>
-                            <label className="block text-sm font-medium mb-2">Equipes (selecione uma ou mais)</label>
-                            <div className="space-y-2 p-3 bg-gray-50 rounded-md max-h-40 overflow-y-auto">
+                            <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : ''}`}>Equipes (selecione uma ou mais)</label>
+                            <div className={`space-y-2 p-3 rounded-md max-h-40 overflow-y-auto ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                                 {teams.map(team => (
                                     <label key={team} className="flex items-center space-x-2 cursor-pointer">
                                         <input 
@@ -1555,7 +1564,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                                             onChange={() => handleTeamToggle(team)}
                                             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                         />
-                                        <span className="text-sm font-medium text-gray-700">{team}</span>
+                                        <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{team}</span>
                                     </label>
                                 ))}
                             </div>
@@ -1629,6 +1638,7 @@ function CollaboratorViewModule() {
 // --- MÓDULO FINANCEIRO ---
 function FinancialModule() {
     const { allCollaborators, evaluations, businessDays } = useContext(AppContext);
+    const { darkMode } = useTheme();
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [paymentStatus, setPaymentStatus] = useState({});
@@ -1689,7 +1699,7 @@ function FinancialModule() {
                         <select 
                             value={selectedMonth} 
                             onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
+                            className={`p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}
                         >
                             {Array.from({length: 12}, (_, i) => (
                                 <option key={i} value={i}>
@@ -1700,7 +1710,7 @@ function FinancialModule() {
                         <select 
                             value={selectedYear} 
                             onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
+                            className={`p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}
                         >
                             <option value={2024}>2024</option>
                             <option value={2025}>2025</option>
@@ -1710,17 +1720,17 @@ function FinancialModule() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-blue-800">Total do Mês</h3>
-                        <p className="text-2xl font-bold text-blue-600">R$ {totalMonthlyAmount.toFixed(2)}</p>
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-blue-900/40 border border-blue-700' : 'bg-blue-50'}`}>
+                        <h3 className={`font-semibold ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Total do Mês</h3>
+                        <p className={`text-2xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>R$ {totalMonthlyAmount.toFixed(2)}</p>
                     </div>
-                    <div className="bg-green-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-green-800">Total Pago no Ano</h3>
-                        <p className="text-2xl font-bold text-green-600">R$ {annualSummary.totalPaidInYear.toFixed(2)}</p>
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-green-900/40 border border-green-700' : 'bg-green-50'}`}>
+                        <h3 className={`font-semibold ${darkMode ? 'text-green-300' : 'text-green-800'}`}>Total Pago no Ano</h3>
+                        <p className={`text-2xl font-bold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>R$ {annualSummary.totalPaidInYear.toFixed(2)}</p>
                     </div>
-                    <div className="bg-purple-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-purple-800">Projeção Anual</h3>
-                        <p className="text-2xl font-bold text-purple-600">R$ {annualSummary.projectedAnnual.toFixed(2)}</p>
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-purple-900/40 border border-purple-700' : 'bg-purple-50'}`}>
+                        <h3 className={`font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-800'}`}>Projeção Anual</h3>
+                        <p className={`text-2xl font-bold ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>R$ {annualSummary.projectedAnnual.toFixed(2)}</p>
                     </div>
                 </div>
             </Card>
@@ -1729,9 +1739,9 @@ function FinancialModule() {
                 <h3 className="text-xl font-bold mb-4">Resumo por Equipe</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {teamSummary.map(team => (
-                        <div key={team.name} className="bg-yellow-50 p-4 rounded-lg border-2 border-yellow-200">
-                            <h4 className="font-bold text-yellow-800 mb-2">{team.name}</h4>
-                            <p className="text-lg font-semibold text-yellow-700">R$ {team.totalAmount.toFixed(2)}</p>
+                        <div key={team.name} className={`p-4 rounded-lg border-2 ${darkMode ? 'bg-yellow-900/30 border-yellow-700' : 'bg-yellow-50 border-yellow-200'}`}>
+                            <h4 className={`font-bold mb-2 ${darkMode ? 'text-yellow-300' : 'text-yellow-800'}`}>{team.name}</h4>
+                            <p className={`text-lg font-semibold ${darkMode ? 'text-yellow-400' : 'text-yellow-700'}`}>R$ {team.totalAmount.toFixed(2)}</p>
                         </div>
                     ))}
                 </div>
@@ -1742,7 +1752,7 @@ function FinancialModule() {
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
-                            <tr className="border-b bg-gray-50">
+                            <tr className={`border-b ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50'}`}>
                                 <th className="text-left p-3">Colaborador</th>
                                 <th className="text-left p-3">Equipe</th>
                                 <th className="text-right p-3">Bônus Escritório</th>
@@ -1754,10 +1764,10 @@ function FinancialModule() {
                         </thead>
                         <tbody>
                             {monthlyFinancialData.map(collaborator => (
-                                <tr key={collaborator.id} className="border-b hover:bg-gray-50">
+                                <tr key={collaborator.id} className={`border-b ${darkMode ? 'border-gray-700 hover:bg-gray-700' : 'hover:bg-gray-50'}`}>
                                     <td className="p-3 font-medium">{collaborator.name}</td>
                                     <td className="p-3">
-                                        <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-semibold">
+                                        <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${darkMode ? 'bg-blue-900/50 text-blue-300' : 'bg-blue-100 text-blue-800'}`}>
                                             {collaborator.team}
                                         </span>
                                     </td>
@@ -1765,7 +1775,7 @@ function FinancialModule() {
                                     <td className="p-3 text-right">R$ {collaborator.fieldBonus.toFixed(2)}</td>
                                     <td className="p-3 text-right font-bold">R$ {collaborator.totalBonus.toFixed(2)}</td>
                                     <td className="p-3 text-center">
-                                        <span className="text-xs text-gray-600">
+                                        <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                                             {collaborator.officeEvals} | {collaborator.fieldEvals}
                                         </span>
                                     </td>
@@ -1782,7 +1792,7 @@ function FinancialModule() {
                             ))}
                         </tbody>
                         <tfoot>
-                            <tr className="border-t-2 bg-gray-100 font-bold">
+                            <tr className={`border-t-2 font-bold ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-100'}`}>
                                 <td colSpan="4" className="p-3 text-right">Total Geral do Mês:</td>
                                 <td className="p-3 text-right text-lg">R$ {totalMonthlyAmount.toFixed(2)}</td>
                                 <td colSpan="2" className="p-3"></td>
@@ -1798,6 +1808,7 @@ function FinancialModule() {
 // --- MÓDULO DE AUDITORIA ---
 function AuditModule() {
     const { evaluations, users, allCollaborators, handleCreateNotification } = useContext(AppContext);
+    const { darkMode } = useTheme();
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [selectedEvaluation, setSelectedEvaluation] = useState(null);
@@ -1860,7 +1871,7 @@ function AuditModule() {
                         <select 
                             value={selectedMonth} 
                             onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
+                            className={`p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}
                         >
                             {Array.from({length: 12}, (_, i) => (
                                 <option key={i} value={i}>
@@ -1871,7 +1882,7 @@ function AuditModule() {
                         <select 
                             value={selectedYear} 
                             onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                            className="p-2 border rounded-md"
+                            className={`p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}
                         >
                             <option value={2024}>2024</option>
                             <option value={2025}>2025</option>
@@ -1881,19 +1892,19 @@ function AuditModule() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-red-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-red-800">Avaliações com Problemas</h3>
-                        <p className="text-2xl font-bold text-red-600">{negativeEvaluations.length}</p>
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-red-900/40 border border-red-700' : 'bg-red-50'}`}>
+                        <h3 className={`font-semibold ${darkMode ? 'text-red-300' : 'text-red-800'}`}>Avaliações com Problemas</h3>
+                        <p className={`text-2xl font-bold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>{negativeEvaluations.length}</p>
                     </div>
-                    <div className="bg-yellow-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-yellow-800">Colaboradores Afetados</h3>
-                        <p className="text-2xl font-bold text-yellow-600">
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-yellow-900/40 border border-yellow-700' : 'bg-yellow-50'}`}>
+                        <h3 className={`font-semibold ${darkMode ? 'text-yellow-300' : 'text-yellow-800'}`}>Colaboradores Afetados</h3>
+                        <p className={`text-2xl font-bold ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`}>
                             {new Set(negativeEvaluations.map(e => e.collaboratorId)).size}
                         </p>
                     </div>
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                        <h3 className="font-semibold text-blue-800">Gestores Envolvidos</h3>
-                        <p className="text-2xl font-bold text-blue-600">
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-blue-900/40 border border-blue-700' : 'bg-blue-50'}`}>
+                        <h3 className={`font-semibold ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>Gestores Envolvidos</h3>
+                        <p className={`text-2xl font-bold ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                             {new Set(negativeEvaluations.map(e => e.managerName)).size}
                         </p>
                     </div>
@@ -1903,8 +1914,8 @@ function AuditModule() {
             <Card>
                 <h3 className="text-xl font-bold mb-4">Avaliações com Critérios Negativos</h3>
                 {negativeEvaluations.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                        <AlertTriangle size={48} className="mx-auto mb-4 text-gray-300" />
+                    <div className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <AlertTriangle size={48} className={`mx-auto mb-4 ${darkMode ? 'text-gray-500' : 'text-gray-300'}`} />
                         <p>Nenhuma avaliação com critérios negativos encontrada neste período.</p>
                     </div>
                 ) : (
@@ -1913,23 +1924,23 @@ function AuditModule() {
                             const criteriaStatus = getCriteriaStatus(evaluation.criteria);
                             const collaboratorName = allCollaborators.find(c => c.id === evaluation.collaboratorId)?.name || 'Desconhecido';
                             return (
-                                <div key={evaluation.id} className="border rounded-lg p-4 bg-red-50 border-red-200">
+                                <div key={evaluation.id} className={`border rounded-lg p-4 ${darkMode ? 'bg-red-900/30 border-red-700' : 'bg-red-50 border-red-200'}`}>
                                     <div className="flex justify-between items-start mb-3">
                                         <div>
                                             <h4 className="font-bold text-lg">{collaboratorName}</h4>
-                                            <p className="text-sm text-gray-600">
+                                            <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                                                 {evaluation.activityType} - {new Date(evaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                                             </p>
-                                            <p className="text-sm text-gray-600">
+                                            <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                                                 Avaliado por: {evaluation.managerName || 'Não informado'}
                                             </p>
                                         </div>
                                         <div className="text-right">
                                             <div className="flex gap-2 mb-2">
-                                                <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-semibold">
+                                                <span className={`px-2 py-1 rounded text-xs font-semibold ${darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-800'}`}>
                                                     {criteriaStatus.negative} Não
                                                 </span>
-                                                <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">
+                                                <span className={`px-2 py-1 rounded text-xs font-semibold ${darkMode ? 'bg-green-900/50 text-green-300' : 'bg-green-100 text-green-800'}`}>
                                                     {criteriaStatus.positive} Sim
                                                 </span>
                                             </div>
@@ -1945,7 +1956,7 @@ function AuditModule() {
                                     
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                         {Object.entries(evaluation.criteria).map(([criterion, value]) => (
-                                            <div key={criterion} className={`p-2 rounded text-xs font-medium ${value === 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                            <div key={criterion} className={`p-2 rounded text-xs font-medium ${value === 1 ? (darkMode ? 'bg-green-900/50 text-green-300' : 'bg-green-100 text-green-800') : (darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-800')}`}>
                                                 <span className="block font-semibold">{criterion}</span>
                                                 <span>{value === 1 ? 'Sim' : 'Não'}</span>
                                             </div>
@@ -1953,7 +1964,7 @@ function AuditModule() {
                                     </div>
                                     
                                     {evaluation.observation && (
-                                        <div className="mt-3 p-2 bg-gray-100 rounded">
+                                        <div className={`mt-3 p-2 rounded ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                                             <p className="text-sm"><strong>Observação:</strong> {evaluation.observation}</p>
                                         </div>
                                     )}
@@ -1969,7 +1980,7 @@ function AuditModule() {
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
-                            <tr className="border-b bg-gray-50">
+                            <tr className={`border-b ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50'}`}>
                                 <th className="text-left p-3">Gestor</th>
                                 <th className="text-center p-3">Avaliações com Problemas</th>
                                 <th className="text-center p-3">Colaboradores Afetados</th>
@@ -2003,12 +2014,12 @@ function AuditModule() {
                                 const problemRate = totalEvaluations > 0 ? (data.problemEvaluations / totalEvaluations * 100) : 0;
                                 
                                 return (
-                                    <tr key={managerName} className="border-b hover:bg-gray-50">
+                                    <tr key={managerName} className={`border-b ${darkMode ? 'border-gray-700 hover:bg-gray-700' : 'hover:bg-gray-50'}`}>
                                         <td className="p-3 font-medium">{managerName}</td>
                                         <td className="p-3 text-center">{data.problemEvaluations}</td>
                                         <td className="p-3 text-center">{data.collaborators.size}</td>
                                         <td className="p-3 text-center">
-                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${problemRate > 20 ? 'bg-red-100 text-red-800' : problemRate > 10 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${problemRate > 20 ? (darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-800') : problemRate > 10 ? (darkMode ? 'bg-yellow-900/50 text-yellow-300' : 'bg-yellow-100 text-yellow-800') : (darkMode ? 'bg-green-900/50 text-green-300' : 'bg-green-100 text-green-800')}`}>
                                                 {problemRate.toFixed(1)}%
                                             </span>
                                         </td>
@@ -2031,23 +2042,23 @@ function AuditModule() {
                         </div>
                         
                         {selectedEvaluation && (
-                            <div className="mb-4 p-3 bg-gray-50 rounded">
+                            <div className={`mb-4 p-3 rounded ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
                                 <p className="font-medium">{allCollaborators.find(c => c.id === selectedEvaluation.collaboratorId)?.name}</p>
-                                <p className="text-sm text-gray-600">
+                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                                     {selectedEvaluation.activityType} - {new Date(selectedEvaluation.startDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                                 </p>
-                                <p className="text-sm text-gray-600">
+                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                                     Gestor: {selectedEvaluation.managerName}
                                 </p>
                             </div>
                         )}
                         
                         <div className="mb-4">
-                            <label className="block text-sm font-medium mb-2">Questionamento:</label>
+                            <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : ''}`}>Questionamento:</label>
                             <textarea
                                 value={questionText}
                                 onChange={(e) => setQuestionText(e.target.value)}
-                                className="w-full p-3 border rounded-md h-24 resize-none"
+                                className={`w-full p-3 border rounded-md h-24 resize-none ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`}
                                 placeholder="Digite seu questionamento sobre esta avaliação..."
                             />
                         </div>
