@@ -720,7 +720,7 @@ function AppNavigator({ currentView, setCurrentView }) {
     const { currentUser } = useContext(AppContext);
     const { darkMode } = useTheme();
 
-    const canSeeDashboard = ['admin', 'manager', 'gerente'].includes(currentUser.role);
+    const canSeeDashboard = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
     const canSeeLancamentos = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
     const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
     const canSeeAudit = currentUser.role === 'gerente';
