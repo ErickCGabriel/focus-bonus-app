@@ -237,12 +237,13 @@ const AppProvider = ({ children }) => {
 
     const visibleCollaborators = useMemo(() => {
         if (!userProfile) return [];
-        if (['admin', 'gerente', 'financeiro'].includes(userProfile.role)) return collaborators;
-        if (userProfile.role === 'manager') {
+        const roles = Array.isArray(userProfile.role) ? userProfile.role : [userProfile.role];
+        if (roles.some(r => ['admin', 'gerente', 'financeiro'].includes(r))) return collaborators;
+        if (roles.includes('manager')) {
             const userTeams = Array.isArray(userProfile.team) ? userProfile.team : [userProfile.team];
             return collaborators.filter(c => userTeams.includes(c.team));
         }
-        if (userProfile.role === 'collaborator') {
+        if (roles.includes('collaborator')) {
              return collaborators.filter(c => c.id === userProfile.collaboratorId);
         }
         return [];
@@ -254,8 +255,8 @@ const AppProvider = ({ children }) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                team: user.role === 'manager' ? user.team : null,
-                collaboratorId: user.role === 'collaborator' ? user.collaboratorId : null,
+                team: (Array.isArray(user.role) ? user.role : [user.role]).some(r => ['manager', 'admin', 'gerente'].includes(r)) ? user.team : null,
+                collaboratorId: (Array.isArray(user.role) ? user.role : [user.role]).includes('collaborator') ? user.collaboratorId : null,
             };
 
             if (user.id) { // Editando usuário existente
@@ -557,8 +558,9 @@ function AppContent() {
     const { darkMode } = useTheme();
     
     const getInitialView = () => {
-        if (currentUser.role === 'collaborator') return 'collaborator_view';
-        if (currentUser.role === 'financeiro') return 'financial';
+        const roles = Array.isArray(currentUser.role) ? currentUser.role : [currentUser.role];
+        if (roles.includes('collaborator') && roles.length === 1) return 'collaborator_view';
+        if (roles.includes('financeiro')) return 'financial';
         return 'dashboard';
     };
     
@@ -580,23 +582,24 @@ function AppContent() {
         return <ForcePasswordChangeModal />;
     }
 
-    const isCalendarReadOnly = currentUser.role === 'financeiro';
-    const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
-    const canLaunchAssessments = ['admin', 'manager', 'gerente'].includes(currentUser.role);
+    const roles = Array.isArray(currentUser.role) ? currentUser.role : [currentUser.role];
+    const isCalendarReadOnly = roles.includes('financeiro') && !roles.some(r => ['admin', 'manager', 'gerente'].includes(r));
+    const canSeeFinancial = roles.some(r => ['admin', 'gerente', 'financeiro'].includes(r));
+    const canLaunchAssessments = roles.some(r => ['admin', 'manager', 'gerente', 'financeiro'].includes(r));
 
     return (
         <div className={`${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-800'} min-h-screen font-sans transition-colors duration-200`}>
             <Header />
             <main className="p-4 sm:p-8 max-w-7xl mx-auto">
                 <AppNavigator currentView={currentView} setCurrentView={setCurrentView} />
-                {(currentUser.role === 'admin' || currentUser.role === 'manager' || currentUser.role === 'gerente') && currentView === 'dashboard' && <DashboardModule />}
+                {roles.some(r => ['admin', 'manager', 'gerente', 'financeiro'].includes(r)) && currentView === 'dashboard' && <DashboardModule />}
                 {canLaunchAssessments && currentView === 'calendar' && <CalendarModule isReadOnly={isCalendarReadOnly} onLaunchEvalModal={(evalToEdit, dateRange, collaboratorId) => { setEditingEvaluation(evalToEdit); setEvalModalProps({dateRange, collaboratorId}); setIsEvalModalOpen(true); }} />}
                 {canSeeFinancial && currentView === 'financial' && <FinancialModule />}
-                {currentUser.role === 'gerente' && currentView === 'audit' && <AuditModule />}
-                {currentUser.role === 'collaborator' && currentView === 'collaborator_view' && <CollaboratorViewModule />}
-                {(currentUser.role === 'admin' || currentUser.role === 'gerente') && currentView === 'collaborators' && <CollaboratorManagementModule onLaunchCollaboratorModal={(user) => { setEditingCollaborator(user); setIsCollaboratorModalOpen(true); }} />}
-                {currentUser.role === 'admin' && currentView === 'access' && <AccessControlModule onLaunchAccessModal={(user) => { setEditingAccessUser(user); setIsAccessModalOpen(true); }} />}
-                {(currentUser.role === 'admin' || currentUser.role === 'gerente') && currentView === 'business_days' && <BusinessDaysModule />}
+                {roles.includes('gerente') && currentView === 'audit' && <AuditModule />}
+                {roles.includes('collaborator') && currentView === 'collaborator_view' && <CollaboratorViewModule />}
+                {roles.some(r => ['admin', 'gerente', 'financeiro'].includes(r)) && currentView === 'collaborators' && <CollaboratorManagementModule onLaunchCollaboratorModal={(user) => { setEditingCollaborator(user); setIsCollaboratorModalOpen(true); }} />}
+                {roles.includes('admin') && currentView === 'access' && <AccessControlModule onLaunchAccessModal={(user) => { setEditingAccessUser(user); setIsAccessModalOpen(true); }} />}
+                {roles.some(r => ['admin', 'gerente'].includes(r)) && currentView === 'business_days' && <BusinessDaysModule />}
             </main>
             
             {isEvalModalOpen && <EvaluationModal isOpen={isEvalModalOpen} onClose={() => setIsEvalModalOpen(false)} {...evalModalProps} initialData={editingEvaluation} />}
@@ -617,17 +620,17 @@ function Header() {
     
     const getRoleDisplay = () => {
         if (!currentUser || !currentUser.role) return '';
-        const role = currentUser.role;
-        if (role === 'admin') return 'Administrador';
-        if (role === 'collaborator') return 'Colaborador';
-        if (role === 'gerente') return 'Gerente';
-        if (role === 'financeiro') return 'Financeiro';
-        if (role === 'manager') {
+        const roles = Array.isArray(currentUser.role) ? currentUser.role : [currentUser.role];
+        if (roles.includes('admin')) return 'Administrador';
+        if (roles.includes('collaborator')) return 'Colaborador';
+        if (roles.includes('gerente')) return 'Gerente';
+        if (roles.includes('financeiro')) return 'Financeiro';
+        if (roles.includes('manager')) {
             const teams = Array.isArray(currentUser.team) ? currentUser.team : [currentUser.team].filter(Boolean);
             if (teams.length === 0) return 'Gestor';
             return teams.length === 1 ? `Gestor - ${teams[0]}` : `Gestor - ${teams.length} equipes`;
         }
-        return role;
+        return roles.join(', ');
     };
     
     const handleNotificationClick = (notification) => {
@@ -720,13 +723,14 @@ function AppNavigator({ currentView, setCurrentView }) {
     const { currentUser } = useContext(AppContext);
     const { darkMode } = useTheme();
 
-    const canSeeDashboard = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
-    const canSeeLancamentos = ['admin', 'manager', 'gerente', 'financeiro'].includes(currentUser.role);
-    const canSeeFinancial = ['admin', 'gerente', 'financeiro'].includes(currentUser.role);
-    const canSeeAudit = currentUser.role === 'gerente';
-    const canSeeMyData = currentUser.role === 'collaborator';
-    const canSeeAdminTools = ['admin', 'gerente'].includes(currentUser.role);
-    const canSeeAccessControl = currentUser.role === 'admin';
+    const roles = Array.isArray(currentUser.role) ? currentUser.role : [currentUser.role];
+    const canSeeDashboard = roles.some(r => ['admin', 'manager', 'gerente', 'financeiro'].includes(r));
+    const canSeeLancamentos = roles.some(r => ['admin', 'manager', 'gerente', 'financeiro'].includes(r));
+    const canSeeFinancial = roles.some(r => ['admin', 'gerente', 'financeiro'].includes(r));
+    const canSeeAudit = roles.includes('gerente');
+    const canSeeMyData = roles.includes('collaborator');
+    const canSeeAdminTools = roles.some(r => ['admin', 'gerente', 'financeiro'].includes(r));
+    const canSeeAccessControl = roles.includes('admin');
 
     const NavButton = ({ view, label, icon }) => (
         <button onClick={() => setCurrentView(view)} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium ${currentView === view ? 'bg-blue-600 text-white' : (darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100')}`}>
@@ -1455,13 +1459,28 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
 
     useEffect(() => {
         setFormData(initialData 
-            ? { ...initialData, team: initialData.team ? (Array.isArray(initialData.team) ? initialData.team : [initialData.team]) : [] } 
-            : { name: '', email: '', password: '', role: 'manager', team: ['Projetos'], collaboratorId: '' }
+            ? { ...initialData, 
+                role: initialData.role ? (Array.isArray(initialData.role) ? initialData.role : [initialData.role]) : ['manager'],
+                team: initialData.team ? (Array.isArray(initialData.team) ? initialData.team : [initialData.team]) : [] 
+              } 
+            : { name: '', email: '', password: '', role: ['manager'], team: ['Projetos'], collaboratorId: '' }
         );
         setNewPassword('');
     }, [initialData]);
 
     const handleChange = (field, value) => setFormData(f => ({ ...f, [field]: value }));
+    
+    const handleRoleToggle = (roleName) => {
+        setFormData(f => {
+            const currentRoles = f.role || [];
+            const isSelected = currentRoles.includes(roleName);
+            let newRoles = isSelected 
+                ? currentRoles.filter(r => r !== roleName)
+                : [...currentRoles, roleName];
+            if (newRoles.length === 0) newRoles = ['collaborator'];
+            return { ...f, role: newRoles };
+        });
+    };
     
     const handleTeamToggle = (teamName) => {
         setFormData(f => {
@@ -1474,7 +1493,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
     };
     
     const handleSave = () => {
-        if (formData.role === 'collaborator' && !formData.collaboratorId) {
+        if (formData.role.includes('collaborator') && !formData.collaboratorId) {
             alert('Por favor, vincule um colaborador a esta conta de usuário.');
             return;
         }
@@ -1526,17 +1545,29 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                     )}
 
                     <div>
-                        <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : ''}`}>Função</label>
-                        <select value={formData.role} onChange={e => handleChange('role', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`}>
-                            <option value="manager">Gestor</option>
-                            <option value="gerente">Gerente</option>
-                            <option value="collaborator">Colaborador</option>
-                            <option value="admin">Administrador</option>
-                            <option value="financeiro">Financeiro</option>
-                        </select>
+                        <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : ''}`}>Funções (selecione uma ou mais)</label>
+                        <div className={`grid grid-cols-2 gap-2 p-3 rounded-md ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                            {[
+                                {id: 'admin', label: 'Administrador'},
+                                {id: 'gerente', label: 'Gerente'},
+                                {id: 'manager', label: 'Gestor'},
+                                {id: 'financeiro', label: 'Financeiro'},
+                                {id: 'collaborator', label: 'Colaborador'}
+                            ].map(role => (
+                                <label key={role.id} className="flex items-center space-x-2 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={(formData.role || []).includes(role.id)}
+                                        onChange={() => handleRoleToggle(role.id)}
+                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{role.label}</span>
+                                </label>
+                            ))}
+                        </div>
                     </div>
                     
-                    {formData.role === 'collaborator' && (
+                    {formData.role.includes('collaborator') && (
                         <div>
                             <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : ''}`}>Vincular ao Colaborador</label>
                             <select value={formData.collaboratorId || ''} onChange={e => handleChange('collaboratorId', e.target.value)} className={`mt-1 block w-full p-2 border rounded-md ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : ''}`}>
@@ -1553,7 +1584,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                         </div>
                     )}
 
-                    {formData.role === 'manager' && (
+                    {formData.role.some(r => ['manager', 'admin', 'gerente'].includes(r)) && (
                         <div>
                             <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : ''}`}>Equipes (selecione uma ou mais)</label>
                             <div className={`space-y-2 p-3 rounded-md max-h-40 overflow-y-auto ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
@@ -1577,7 +1608,7 @@ function AccessControlModal({ isOpen, onClose, initialData }) {
                 </div>
                 <div className="flex justify-end gap-3 mt-8">
                     <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-                    <Button variant="primary" onClick={handleSave} disabled={formData.role === 'manager' && (formData.team || []).length === 0}><Save size={16}/> Salvar</Button>
+                    <Button variant="primary" onClick={handleSave} disabled={formData.role.some(r => ['manager', 'admin', 'gerente'].includes(r)) && (formData.team || []).length === 0}><Save size={16}/> Salvar</Button>
                 </div>
             </Card>
         </div>
